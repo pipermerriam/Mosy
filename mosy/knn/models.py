@@ -3,8 +3,10 @@ from django.db.models import Q
 
 from mosy.pof.fields import PickledObjectField
 
-from random import normalvariate, uniform, randint, shuffle
+from random import normalvariate, uniform, randint, shuffle, sample
 from math import sqrt, floor
+from threading import Thread
+from time import time
 
 # Create your models here.
 
@@ -65,6 +67,7 @@ class LSH(models.Model):
     while True:
       if cls.objects.count() < 1000:
         print "Generating Base Objects"
+        tlist = []
         for i in range(1000-cls.objects.count()):
           x = cls()
           x.test()
@@ -87,9 +90,9 @@ class LSH(models.Model):
     if not std == None:
       self.std = std
     else:
-      self.std = floor(uniform(64, 1024))
+      self.std = floor(uniform(8, 1024))
     self.a = [normalvariate(self.mean, self.std) for i in range(dimension)]
-    self.r = floor(uniform(256, 16384))
+    self.r = floor(uniform(32, 16384))
     self.b = uniform(0, self.r)
     self.save()
 
@@ -99,11 +102,16 @@ class LSH(models.Model):
     dp = sum([a*x for a, x in zip(self.a, v)])
     return floor((dp + self.b)/float(self.r))
 
-  def test(self):
-    sample_set = list(DataPoint.objects.all().order_by('?')[:200])
+  def test(self, early_exit = False):
+    start_time = time()
+    #sample_set = list(DataPoint.objects.only('id').order_by('?').values_list('id', flat=True)[:200])
+    sample_set = sample(range(1, 5001), 200)
     overall_score = 0.0
+    if early_exit:
+      target_score = LSH.objects.order_by('-score')[0].score
+
     for n in range(len(sample_set)):
-      test_point = sample_set.pop()
+      test_point = DataPoint.objects.get(pk = sample_set.pop())
 
       close_points = list(Edge.objects.filter(point_a = test_point).order_by('length').values_list('point_b', 'length'))
       close_points += list(Edge.objects.filter(point_b = test_point).order_by('length').values_list('point_a', 'length'))
@@ -111,8 +119,13 @@ class LSH(models.Model):
       close_points = [j[0] for j in close_points]
       assert len(close_points) == 20
 
-      points = list(DataPoint.objects.exclude(pk = test_point.id).exclude(pk__in = close_points).order_by('?')[:200])
-      points += list(DataPoint.objects.filter(pk__in = close_points))
+      points = range(1, 5001)
+      for point in close_points:
+        points.remove(point)
+      points.remove(test_point.id)
+      points = sample(points, 200)
+      points += close_points
+      points = list(DataPoint.objects.filter(pk__in = points))
       for p in points:
         p.distance = test_point.dist(p)
 
@@ -125,20 +138,26 @@ class LSH(models.Model):
         point = points[i]
         point.p_rank = i
 
-      score = 1315
+      score = 72
       points = sorted(points, key = lambda p: p.distance)
-      for i in range(220):
+      for i in range(20):
         point = points[i]
         point.rank = i
         if abs(point.rank - point.p_rank) > 5:
-          score -= 220.0/(point.rank + 1)
+          score -= 20.0/(point.rank + 1)
       #print "Test %i: Score -> %i"%(i, int(score))
       overall_score = (overall_score*n+score)/(n+1)
-    if self.parent:
-      print "Parent Score: %f"%(self.parent.score)
-    print "Overall Score: %f"%(overall_score)
+      if early_exit and n > 80:
+        if overall_score < target_score*(float(n)/200-0.2):
+          print "Early Exit Criteria Met at %i"%n
+          break
+
     self.score = overall_score
     self.save()
+
+    if self.parent:
+      print "Parent(%i) Score: %f"%(self.parent.id, self.parent.score)
+    print "LSH(%i) - Overall Score: %f Test_Time: %f"%(self.id, overall_score, time() - start_time)
 
   def mutate(self):
     a = self.a
@@ -147,17 +166,19 @@ class LSH(models.Model):
     mean = self.mean
     std = self.std
 
-    x = randint(1, 5)
-    if x in (1, 2, 3):
-      if x == 2:
+    x = randint(1, len(a)+4)
+    if x <= 2:
+      if x == 1:
         mean = floor(uniform(128, 2048))
-      if x == 3:
+      if x == 2:
         std = floor(uniform(64, 1024))
-      a[randint(0, len(a)-1)] = normalvariate(self.mean, self.std)
-    if x == 4:
+      a = [normalvariate(self.mean, self.std) for i in range(len(self.a))]
+    if x == 3:
       b = uniform(0, r)
-    if x == 5:
+    if x == 4:
       r = floor(uniform(b, 16384))
+    if x >= 5:
+      a[randint(0, len(a)-1)] = normalvariate(self.mean, self.std)
     return LSH.objects.create(
       parent = self,
       a = a,
