@@ -10,8 +10,18 @@ from time import time
 
 # Create your models here.
 
+RADIUS = 300
+TOLERANCE = 1.2
+
 class DataPoint(models.Model):
   vector = PickledObjectField()
+
+  @classmethod
+  def get_plist(cls):
+    plist = {}
+    for p in cls.objects.iterator():
+      plist[p.id] = p
+    return plist
 
   def get_knn(self, points = None, debug = False):
     if not points:
@@ -21,21 +31,18 @@ class DataPoint(models.Model):
       if dp.id == self.id:
         continue
       dp.distance = self.dist(dp)
-      if len(neighbors) < 20 or dp.distance < neighbors[0].distance:
+      if len(neighbors) < 200 or dp.distance < neighbors[0].distance:
         neighbors.append(dp)
         neighbors = sorted(neighbors, key = lambda p: p.distance)
-        neighbors = neighbors[:20]
+        neighbors = neighbors[:200]
         neighbors.reverse()
         if debug:
           print "New Neighbor: %i - %f"%(dp.id, dp.distance)
-    for n in neighbors:
-      if self.id < n.id:
-        a = self
-        b = n
-      else:
-        a = n
-        b = self
-      Edge.objects.get_or_create(point_a = a, point_b = b, length = a.dist(b))
+    nl = [n.id for n in neighbors]
+    n, created = Neighbors.objects.get_or_create(point = self)
+    if created:
+      n.neighbors = nl
+      n.save()
     return neighbors
 
   def dist(self, other, exact = False):
@@ -44,17 +51,16 @@ class DataPoint(models.Model):
       d += (a-b)**2
     return sqrt(d)
 
-class Edge(models.Model):
-  point_a = models.ForeignKey(DataPoint, related_name = '+')
-  point_b = models.ForeignKey(DataPoint, related_name = '+')
-  length = models.FloatField()
-
-  class Meta:
-    unique_together = ('point_a', 'point_b')
+class Neighbors(models.Model):
+  point = models.ForeignKey(DataPoint)
+  neighbors = PickledObjectField()
 
 class LSH(models.Model):
   parent = models.ForeignKey('self', related_name = 'children', null = True)
   score = models.FloatField(null = True)
+  p1 = models.FloatField(null = True)
+  p2 = models.FloatField(null = True)
+  collisions = models.FloatField(null = True)
 
   a = PickledObjectField(null = True)
   r = models.IntegerField(null = True)
@@ -64,18 +70,21 @@ class LSH(models.Model):
 
   @classmethod
   def evolve(cls):
+    plist = DataPoint.get_plist()
     while True:
-      if cls.objects.count() < 1000:
+      if cls.objects.count() < 10000:
+        if cls.objects.filter(score = None):
+          for x in cls.objects.filter(score = None):
+            x.test(plist = plist)
         print "Generating Base Objects"
-        tlist = []
-        for i in range(1000-cls.objects.count()):
+        for i in range(10000-cls.objects.count()):
           x = cls()
-          x.test()
+          x.test(plist = plist)
       null_query = cls.objects.filter(score = None)
       if null_query.exists():
         print "Scoring New Children"
         for lsh in null_query:
-          lsh.test()
+          lsh.test(plist = plist)
       best_query = cls.objects.order_by('-score')[:20]
       for lsh in best_query:
         print "Mutating LSH(%i) - Score:%f"%(lsh.id, lsh.score)
@@ -86,13 +95,13 @@ class LSH(models.Model):
     if not mean == None:
       self.mean = mean
     else:
-      self.mean = floor(uniform(128, 2048))
+      self.mean = floor(uniform(2, 128))
     if not std == None:
       self.std = std
     else:
-      self.std = floor(uniform(8, 1024))
+      self.std = floor(uniform(1, 64))
     self.a = [normalvariate(self.mean, self.std) for i in range(dimension)]
-    self.r = floor(uniform(32, 16384))
+    self.r = floor(uniform(2, 16384))
     self.b = uniform(0, self.r)
     self.save()
 
@@ -102,22 +111,28 @@ class LSH(models.Model):
     dp = sum([a*x for a, x in zip(self.a, v)])
     return floor((dp + self.b)/float(self.r))
 
-  def test(self, early_exit = False):
+  def test(self, plist = None, early_exit = False):
+    if plist == None:
+      plist = DataPoint.get_plist()
     start_time = time()
-    #sample_set = list(DataPoint.objects.only('id').order_by('?').values_list('id', flat=True)[:200])
     sample_set = sample(range(1, 5001), 200)
-    overall_score = 0.0
-    if early_exit:
-      target_score = LSH.objects.order_by('-score')[0].score
+    score_overall = 0.0
+    p1_overall = 0.0
+    p2_overall = 0.0
+    p3_overall = 0.0
+    collisions_overall = 0.0
 
     for n in range(len(sample_set)):
       test_point = DataPoint.objects.get(pk = sample_set.pop())
+      test_point.projection = self.project(test_point.vector)
 
-      close_points = list(Edge.objects.filter(point_a = test_point).order_by('length').values_list('point_b', 'length'))
-      close_points += list(Edge.objects.filter(point_b = test_point).order_by('length').values_list('point_a', 'length'))
-      close_points = sorted(close_points, key = lambda val: val[1])[:20]
-      close_points = [j[0] for j in close_points]
-      assert len(close_points) == 20
+      while True:
+        if Neighbors.objects.filter(point = test_point).exists():
+          close_points = Neighbors.objects.get(point = test_point).neighbors
+        else:
+          test_point.get_knn()
+          continue
+        break
 
       points = range(1, 5001)
       for point in close_points:
@@ -125,7 +140,10 @@ class LSH(models.Model):
       points.remove(test_point.id)
       points = sample(points, 200)
       points += close_points
-      points = list(DataPoint.objects.filter(pk__in = points))
+      points = [plist[p] for p in points]
+      #points = list(DataPoint.objects.filter(pk__in = points))
+
+      assert len(points) == 400
       for p in points:
         p.distance = test_point.dist(p)
 
@@ -134,30 +152,48 @@ class LSH(models.Model):
 
       shuffle(points)
       points = sorted(points, key = lambda p: p.projection)
-      for i in range(220):
+      for i in range(400):
         point = points[i]
         point.p_rank = i
 
-      score = 72
+
+      score = 120
       points = sorted(points, key = lambda p: p.distance)
-      for i in range(20):
+
+      collisions = 0
+      p1_count = 0
+      p2_count = 0
+      p3_count = 0
+      for i in range(400):
         point = points[i]
         point.rank = i
-        if abs(point.rank - point.p_rank) > 5:
+        if i < 200 and abs(point.rank - point.p_rank) > 5:
           score -= 20.0/(point.rank + 1)
-      #print "Test %i: Score -> %i"%(i, int(score))
-      overall_score = (overall_score*n+score)/(n+1)
-      if early_exit and n > 80:
-        if overall_score < target_score*(float(n)/200-0.2):
-          print "Early Exit Criteria Met at %i"%n
-          break
+        if test_point.projection == point.projection:
+          collisions += 1
+          if point.distance <= RADIUS:
+            p1_count += 1
+          elif point.distance >= RADIUS*TOLERANCE:
+            p2_count += 1
+          else:
+            p3_count += 1
+      score_overall = (score_overall*n+score)/(n+1)
+      p1_overall = (p1_overall*n+p1_count)/(n+1)
+      p2_overall = (p2_overall*n+p2_count)/(n+1)
+      p3_overall = (p3_overall*n+p3_count)/(n+1)
+      collisions_overall = (collisions_overall*n+collisions)/(n+1)
 
-    self.score = overall_score
+    self.collisions = collisions_overall
+    if collisions_overall > 0:
+      self.p1 = float(p1_overall)/collisions_overall
+      self.p2 = float(p2_overall)/collisions_overall
+    self.score = score_overall
     self.save()
 
     if self.parent:
       print "Parent(%i) Score: %f"%(self.parent.id, self.parent.score)
-    print "LSH(%i) - Overall Score: %f Test_Time: %f"%(self.id, overall_score, time() - start_time)
+    print "LSH(%i) - Overall Score: %f Test_Time: %f"%(self.id, score_overall, time() - start_time)
+    print "Colisions: %i - P1: %i P2: %i P3: %i"%(int(collisions_overall), int(p1_overall), int(p2_overall), int(p3_overall))
 
   def mutate(self):
     a = self.a
