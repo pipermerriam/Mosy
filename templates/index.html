@@ -2,65 +2,51 @@
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
   <head>
-    <title>Placenoun</title>
-    <script type="text/javascript">
-
-    var _gaq = _gaq || [];
-    _gaq.push(['_setAccount', 'UA-20823260-4']);
-    _gaq.push(['_setDomainName', 'placenoun.com']);
-    _gaq.push(['_setAllowHash', 'false']);
-    _gaq.push(['_trackPageview']);
-
-    (function() {
-      var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-      ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
-      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-    })();
-
-    </script>
+    <title>Mosy</title>
     <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js"></script> 
     <script>
     $(function() {
-      $("form").submit(function() {
-        var query = $("#search").val();
-        query = query.replace(' ','+');
-        query = query.replace(/[^a-zA-Z+]/g,'');
-        window.location = query;
-        return false;
-      });
     });
     </script>
-    <style>
-      body { font-size: 32px; text-align: center; margin: 0 auto;}
-      input, label { padding: 10px; line-height: 1.1em; font-size: 1.1em; margin: 0 auto; text-transform: uppercase; width: 300px;}
-      form { margin-bottom: 20px; }
-      div.ljust { text-align: left; font-size: 18px; width: 700px; margin: 0 auto;}
-      li { list-style: none; }
+    <style type="text/css">
+      body { font-size: 18px; margin: 0 auto;}
+      div.main { margin: 10px 0; }
+      div.tr { float: left; display: inline; width: 100%; height: auto; margin: 0px 0px 5px 0px; }
+      div.tr div.th { float: left; display: inline; width: 100px; height: auto; }
+      div.tr div.td { float: left; display: inline; width: 200px; height: auto; }
+      div.fl { float: left; display: inline; }
+      div.num { width: 150px; }
+      a.inc { color: #254117; }
+      a.decr { color: #7E2217; }
+      .mutated { color: red; }
     </style>
   </head>
   <body>
     <div>
       <header id="header">
-        <h1>PlaceNoun</h1>
+        <h1>Top Hash Functions</h1>
       </header>
       
       <div class="clear"></div>
       
       <div id="main">
-        <p>Placenoun is the combination of <a href="http://www.fuckyeahnouns.com" target="_blank">FuckYeahNouns.com</a> and <a href="http://www.placekitten.com" target="_blank">PlaceKitten.com</a></p>
-        <form>
-          <label for="search">Show me a</label>
-          <input id="search" type="text">
-        </form>
-        <div class="ljust">
-          <h3>Links like:</h3>
-          <ul>
-            <li>This: <a href="http://www.placenoun.com/{{ noun.noun }}/">http://www.placenoun.com/{{ noun.noun }}/</a></li>
-            <li>Or This: <a href="http://www.placenoun.com/{{ noun.noun }}/200/300/">http://www.placenoun.com/{{ noun.noun }}/200/300/</a></li>
-          </ul>
-          <p></p>
-        </div>
-        <img src="{{ noun.image.url }}" />
+        {% for lsh in top_lsh %}
+          <div class="section">
+            <div class="tr">
+              <div class="th"><a href="{% url mosy.knn.views.detail lsh.id %}">Hash: {{ lsh.id }}</a></div>
+              <div class="td"><strong>Score: </strong>{{ lsh.score }}</div>
+              <div class="td"><strong>Collisions: </strong>{{ lsh.collisions }}</div>
+              <div class="td"><strong>P1: </strong>{{ lsh.p1 }}</div>
+              <div class="td"><strong>P2: </strong>{{ lsh.p2 }}</div>
+              {% if lsh.father %}
+                <div class="td"><strong>Father: </strong><a href="{% url mosy.knn.views.detail lsh.father.id %}">{{ lsh.father.id }}: {{lsh.father.score }}</a></div>
+              {% endif %}
+              {% if lsh.mother %}
+                <div class="td"><strong>Mother: </strong><a href="{% url mosy.knn.views.detail lsh.mother.id %}">{{ lsh.mother.id }}: {{lsh.mother.score }}</a></div>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
       </div>
       
       <div class="clear"></div>

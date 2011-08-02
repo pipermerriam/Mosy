@@ -78,14 +78,13 @@ class LSH(models.Model):
 
   @property
   def generation(self):
-    gen = 0
-    this = self
-    while True:
-      if this.father:
-        this = this.father
-        gen += 1
-        continue
-      break
+    gen =  0
+    if not self.father and not self.mother:
+      return gen
+    if self.father:
+      gen = self.father.generation + 1
+    if self.mother:
+      gen = max(gen, self.mother.generation + 1)
     return gen
 
   @classmethod
@@ -165,13 +164,13 @@ class LSH(models.Model):
     if not mean == None:
       self.mean = mean
     else:
-      self.mean = floor(uniform(2, 128))
+      self.mean = floor(uniform(-128, 128))
     if not std == None:
       self.std = std
     else:
       self.std = floor(uniform(1, 64))
     self.a = [normalvariate(self.mean, self.std) for i in range(dimension)]
-    self.r = floor(uniform(2, 16384))
+    self.r = floor(uniform(2, 32768))
     self.b = uniform(0, self.r)
     self.save()
 
