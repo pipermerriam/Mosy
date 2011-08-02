@@ -1,5 +1,5 @@
 from django.db import models
-from django.db.models import Q
+from django.db.models import Q, F
 
 from mosy.pof.fields import PickledObjectField
 
@@ -20,6 +20,7 @@ class DataPoint(models.Model):
   def get_plist(cls):
     plist = {}
     for p in cls.objects.iterator():
+      p.neighbors = Neighbors.objects.get(point = p).neighbors
       plist[p.id] = p
     return plist
 
@@ -123,16 +124,12 @@ class LSH(models.Model):
     collisions_overall = 0.0
 
     for n in range(len(sample_set)):
-      test_point = DataPoint.objects.get(pk = sample_set.pop())
+      #test_point = DataPoint.objects.get(pk = sample_set.pop())
+      test_point = plist[sample_set.pop()]
       test_point.projection = self.project(test_point.vector)
 
-      while True:
-        if Neighbors.objects.filter(point = test_point).exists():
-          close_points = Neighbors.objects.get(point = test_point).neighbors
-        else:
-          test_point.get_knn()
-          continue
-        break
+      #close_points = Neighbors.objects.get(point = test_point).neighbors
+      close_points = test_point.neighbors
 
       points = range(1, 5001)
       for point in close_points:
@@ -185,8 +182,8 @@ class LSH(models.Model):
 
     self.collisions = collisions_overall
     if collisions_overall > 0:
-      self.p1 = float(p1_overall)/collisions_overall
-      self.p2 = float(p2_overall)/collisions_overall
+      self.p1 = p1_overall
+      self.p2 = p2_overall
     self.score = score_overall
     self.save()
 
