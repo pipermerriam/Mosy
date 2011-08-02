@@ -1,9 +1,10 @@
-from django.db import models
+from django.db import models, connection, transaction
 from django.db.models import Q, F
 
 from mosy.pof.fields import PickledObjectField
 
-from random import normalvariate, uniform, randint, shuffle, sample
+from itertools import combinations
+from random import normalvariate, uniform, randint, shuffle, sample, choice
 from math import sqrt, floor
 from threading import Thread
 from time import time
@@ -57,8 +58,8 @@ class Neighbors(models.Model):
   neighbors = PickledObjectField()
 
 class LSH(models.Model):
-  parent = models.ForeignKey('self', related_name = 'children', null = True)
-  score = models.FloatField(null = True)
+  father = models.ForeignKey('self', related_name = 'father_of', null = True)
+  mother = models.ForeignKey('self', related_name = 'mother_of', null = True)
   p1 = models.FloatField(null = True)
   p2 = models.FloatField(null = True)
   collisions = models.FloatField(null = True)
@@ -69,28 +70,96 @@ class LSH(models.Model):
   mean = models.FloatField(null = True)
   std = models.FloatField(null = True)
 
+  @property
+  def score(self):
+    if self.p1 == None or self.p2 == None:
+      return False
+    return self.p1 - self.p2
+
+  @property
+  def generation(self):
+    gen = 0
+    this = self
+    while True:
+      if this.father:
+        this = this.father
+        gen += 1
+        continue
+      break
+    return gen
+
   @classmethod
   def evolve(cls):
     plist = DataPoint.get_plist()
     while True:
-      if cls.objects.count() < 10000:
-        if cls.objects.filter(score = None):
-          for x in cls.objects.filter(score = None):
+      if cls.objects.count() < 4000:
+        if cls.objects.filter(collisions = None):
+          for x in cls.objects.filter(collisions = None):
             x.test(plist = plist)
         print "Generating Base Objects"
-        for i in range(10000-cls.objects.count()):
+        for i in range(4000-cls.objects.count()):
           x = cls()
           x.test(plist = plist)
-      null_query = cls.objects.filter(score = None)
+      null_query = cls.objects.defer('father', 'mother').filter(collisions = None)
       if null_query.exists():
-        print "Scoring New Children"
+        assert len(null_query)
+        print "Testing New Children"
         for lsh in null_query:
           lsh.test(plist = plist)
-      best_query = cls.objects.order_by('-score')[:20]
-      for lsh in best_query:
-        print "Mutating LSH(%i) - Score:%f"%(lsh.id, lsh.score)
-        for i in range(50):
-          lsh.mutate()
+      print "Generating Parents for new Generations"
+      parents_query = cls.objects.raw('SELECT id, collisions, a, b, r, mean, std, p1, p2 FROM knn_lsh ORDER BY p1-p2 DESC LIMIT 0, 60')
+      parents = [lsh for lsh in parents_query]
+      print "Grabbing random breeders"
+      for i in range(3):
+        lucky_query = cls.objects.raw('SELECT id, collisions, a, b, r, mean, std, p1, p2 FROM knn_lsh ORDER BY p1-p2 DESC LIMIT %s, 1', [randint(61, 601)])
+        parents.append(lucky_query[0])
+      spawn = cls()
+      print "Spawning Random New Hash"
+      spawn.test(plist = plist)
+      parents.append(spawn)
+      assert len(parents) == 64
+      for hash_a, hash_b in combinations(parents, 2):
+        if hash_a.score > hash_b.score:
+          father = hash_a
+          mother = hash_b
+        else:
+          father = hash_b
+          mother = hash_a
+        child = LSH.breed(father, mother)
+        print "Breeding Father(%i: %f) and Mother(%i: %f)"%(father.id, father.score, mother.id, mother.score)
+
+  @classmethod
+  def breed(cls, hash_a, hash_b):
+    score_a = hash_a.score
+    score_b = hash_b.score
+    weight_a = score_a/(score_a + score_b)
+    weight_b = score_b/(score_a + score_b)
+    
+    x = cls()
+    x.father = hash_a
+    x.mother = hash_b
+    for val in ('b', 'r'):
+      if uniform(0, 1) <= weight_a:
+        setattr(x, val, getattr(hash_a, val))
+      else:
+        setattr(x, val, getattr(hash_b, val))
+
+    if randint(1, 100) >= 99:
+      for val in ('mean', 'std'):
+        if uniform(0, 1) <= weight_a:
+          setattr(x, val, getattr(hash_a, val))
+        else:
+          setattr(x, val, getattr(hash_b, val))
+      x.a = [normalvariate(x.mean, x.std) for i in range(len(hash_a.a))]
+    else:
+      x.a = []
+      for i in range(len(hash_a.a)):
+        if uniform(0, 1) <= weight_a:
+          x.a.append(hash_a.a[i])
+        else:
+          x.a.append(hash_b.a[i])
+    x.save()
+    return x
 
   def generate(self, mean = None, std = None, dimension = 48):
     if not mean == None:
@@ -107,17 +176,21 @@ class LSH(models.Model):
     self.save()
 
   def project(self, v):
-    if not self.a or not self.b or not self.r:
-      self.generate()
-    dp = sum([a*x for a, x in zip(self.a, v)])
+    if self.a == None or self.b == None or self.r == None:
+      if not self.mother and not self.father:
+        self.generate()
+    dp = sum([x*y for x, y in zip(self.a, v)])
     return floor((dp + self.b)/float(self.r))
 
-  def test(self, plist = None, early_exit = False):
+  def test(self, plist = None, early_exit = True):
     if plist == None:
       plist = DataPoint.get_plist()
     start_time = time()
+    if early_exit:
+      cursor = connection.cursor()
+      cursor.execute("SELECT p1-p2 AS `score` FROM `knn_lsh` ORDER BY p1-p2 DESC LIMIT 100,1")
+      target_score = float(cursor.fetchone()[0])
     sample_set = sample(range(1, 5001), 200)
-    score_overall = 0.0
     p1_overall = 0.0
     p2_overall = 0.0
     p3_overall = 0.0
@@ -141,21 +214,11 @@ class LSH(models.Model):
       #points = list(DataPoint.objects.filter(pk__in = points))
 
       assert len(points) == 400
-      for p in points:
-        p.distance = test_point.dist(p)
-
       for point in points:
+        point.distance = test_point.dist(point)
         point.projection = self.project(point.vector)
 
       shuffle(points)
-      points = sorted(points, key = lambda p: p.projection)
-      for i in range(400):
-        point = points[i]
-        point.p_rank = i
-
-
-      score = 120
-      points = sorted(points, key = lambda p: p.distance)
 
       collisions = 0
       p1_count = 0
@@ -163,9 +226,6 @@ class LSH(models.Model):
       p3_count = 0
       for i in range(400):
         point = points[i]
-        point.rank = i
-        if i < 200 and abs(point.rank - point.p_rank) > 5:
-          score -= 20.0/(point.rank + 1)
         if test_point.projection == point.projection:
           collisions += 1
           if point.distance <= RADIUS:
@@ -174,48 +234,20 @@ class LSH(models.Model):
             p2_count += 1
           else:
             p3_count += 1
-      score_overall = (score_overall*n+score)/(n+1)
       p1_overall = (p1_overall*n+p1_count)/(n+1)
       p2_overall = (p2_overall*n+p2_count)/(n+1)
       p3_overall = (p3_overall*n+p3_count)/(n+1)
       collisions_overall = (collisions_overall*n+collisions)/(n+1)
+      if early_exit and n >= 160:
+        if p1_overall - p2_overall < target_score*(float(n)/400-0.2):
+          print "Early Exit Criteria Met at %i"%n
+          break
 
     self.collisions = collisions_overall
     if collisions_overall > 0:
       self.p1 = p1_overall
       self.p2 = p2_overall
-    self.score = score_overall
     self.save()
 
-    if self.parent:
-      print "Parent(%i) Score: %f"%(self.parent.id, self.parent.score)
-    print "LSH(%i) - Overall Score: %f Test_Time: %f"%(self.id, score_overall, time() - start_time)
-    print "Colisions: %i - P1: %i P2: %i P3: %i"%(int(collisions_overall), int(p1_overall), int(p2_overall), int(p3_overall))
-
-  def mutate(self):
-    a = self.a
-    b = self.b
-    r = self.r
-    mean = self.mean
-    std = self.std
-
-    x = randint(1, len(a)+4)
-    if x <= 2:
-      if x == 1:
-        mean = floor(uniform(128, 2048))
-      if x == 2:
-        std = floor(uniform(64, 1024))
-      a = [normalvariate(self.mean, self.std) for i in range(len(self.a))]
-    if x == 3:
-      b = uniform(0, r)
-    if x == 4:
-      r = floor(uniform(b, 16384))
-    if x >= 5:
-      a[randint(0, len(a)-1)] = normalvariate(self.mean, self.std)
-    return LSH.objects.create(
-      parent = self,
-      a = a,
-      b = b,
-      r = r,
-      mean = mean,
-      std = std)
+    print "LSH(%i) - Test_Time: %f"%(self.id, time() - start_time)
+    #print "Colisions: %i - P1: %i P2: %i P3: %i"%(int(collisions_overall), int(p1_overall), int(p2_overall), int(p3_overall))

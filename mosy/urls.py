@@ -8,6 +8,7 @@ urlpatterns = patterns('',
     # Examples:
     # url(r'^$', 'mosy.views.home', name='home'),
     # url(r'^mosy/', include('mosy.foo.urls')),
+    (r'^(?P<lsh_id>[0-9]+)/$', 'mosy.knn.views.detail'),
 
     # Uncomment the admin/doc line below to enable admin documentation:
     # url(r'^admin/doc/', include('django.contrib.admindocs.urls')),

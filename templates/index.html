@@ -1,0 +1,75 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <title>Placenoun</title>
+    <script type="text/javascript">
+
+    var _gaq = _gaq || [];
+    _gaq.push(['_setAccount', 'UA-20823260-4']);
+    _gaq.push(['_setDomainName', 'placenoun.com']);
+    _gaq.push(['_setAllowHash', 'false']);
+    _gaq.push(['_trackPageview']);
+
+    (function() {
+      var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+      ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+    })();
+
+    </script>
+    <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js"></script> 
+    <script>
+    $(function() {
+      $("form").submit(function() {
+        var query = $("#search").val();
+        query = query.replace(' ','+');
+        query = query.replace(/[^a-zA-Z+]/g,'');
+        window.location = query;
+        return false;
+      });
+    });
+    </script>
+    <style>
+      body { font-size: 32px; text-align: center; margin: 0 auto;}
+      input, label { padding: 10px; line-height: 1.1em; font-size: 1.1em; margin: 0 auto; text-transform: uppercase; width: 300px;}
+      form { margin-bottom: 20px; }
+      div.ljust { text-align: left; font-size: 18px; width: 700px; margin: 0 auto;}
+      li { list-style: none; }
+    </style>
+  </head>
+  <body>
+    <div>
+      <header id="header">
+        <h1>PlaceNoun</h1>
+      </header>
+      
+      <div class="clear"></div>
+      
+      <div id="main">
+        <p>Placenoun is the combination of <a href="http://www.fuckyeahnouns.com" target="_blank">FuckYeahNouns.com</a> and <a href="http://www.placekitten.com" target="_blank">PlaceKitten.com</a></p>
+        <form>
+          <label for="search">Show me a</label>
+          <input id="search" type="text">
+        </form>
+        <div class="ljust">
+          <h3>Links like:</h3>
+          <ul>
+            <li>This: <a href="http://www.placenoun.com/{{ noun.noun }}/">http://www.placenoun.com/{{ noun.noun }}/</a></li>
+            <li>Or This: <a href="http://www.placenoun.com/{{ noun.noun }}/200/300/">http://www.placenoun.com/{{ noun.noun }}/200/300/</a></li>
+          </ul>
+          <p></p>
+        </div>
+        <img src="{{ noun.image.url }}" />
+      </div>
+      
+      <div class="clear"></div>
+      
+      <footer id="footer">
+        <p>
+      </footer>
+      
+    
+    </div>
+  </body>
+</html>

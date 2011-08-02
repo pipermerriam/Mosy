@@ -1,0 +1,152 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <title>Mosy</title>
+    <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js"></script> 
+    <script>
+    $(function() {
+    });
+    </script>
+    <style type="text/css">
+      body { font-size: 18px; margin: 0 auto;}
+      div.main { margin: 10px 0; }
+      div.tr { float: left; display: inline; width: 100%; height: auto; margin: 0px 0px 5px 0px; }
+      div.tr div.th { float: left; display: inline; width: 100px; height: auto; }
+      div.tr div.td { float: left; display: inline; width: 600px; height: auto; }
+      div.fl { float: left; display: inline; }
+      div.num { width: 150px; }
+      a.inc { color: #254117; }
+      a.decr { color: #7E2217; }
+      .mutated { color: red; }
+    </style>
+  </head>
+  <body>
+    <div>
+      <header id="header">
+        <h1>LSH Result</h1>
+      </header>
+      
+      <div class="clear"></div>
+      
+      <div id="main">
+        <h2>Hash Function {{ lsh.id }}</h2>
+        <div class="section">
+          <h3>Performance</h3>
+          <div class="tr">
+            <div class="th">#ID</div>
+            <div class="td">{{ lsh.id }}</div>
+          </div>
+          <div class="tr">
+            <div class="th">Collisions</div>
+            <div class="td">{{ lsh.collisions|floatformat:"-3" }}</div>
+          </div>
+          <div class="tr">
+            <div class="th">P1</div>
+            <div class="td">{{ lsh.p1|floatformat:"-3" }}</div>
+          </div>
+          <div class="tr">
+            <div class="th">P2</div>
+            <div class="td">{{ lsh.p2|floatformat:"-3" }}</div>
+          </div>
+          <div class="tr">
+            <div class="th">Score</div>
+            <div class="td">{{ score }} {% if parent %}({{ change }}){% endif %}</div>
+          </div>
+        </div>
+        <div class="section">
+          <h3>Details</h3>
+          <div class="tr">
+            <div class="th">A</div>
+            <div class="td">
+              {% for val in lsh.a %}
+                <div class="fl num"><strong>{{ forloop.counter0 }}:</strong> {{ val|floatformat:"-3" }}</div>
+              {% endfor %}
+              <div class="clear"></div>
+            </div>
+          </div>
+          <div class="tr">
+            <div class="th">Mean</div>
+            <div class="td">{{ lsh.mean|floatformat:"-3" }}</div>
+          </div>
+          <div class="tr">
+            <div class="th">Stdev</div>
+            <div class="td">{{ lsh.std|floatformat:"-3" }}</div>
+          </div>
+          <div class="tr">
+            <div class="th">B</div>
+            <div class="td">{{ lsh.b|floatformat:"-3" }}</div>
+          </div>
+          <div class="tr">
+            <div class="th">R</div>
+            <div class="td">{{ lsh.r }}</div>
+          </div>
+        </div>
+        <div class="section">
+          <h3>Genetics</h3>
+          <div class="tr">
+            <div class="th">Father</div>
+            {% if father %}
+              <div class="td"><a href="{% url mosy.knn.views.detail father.id %}"><strong>{{ father.id }}:</strong> {{ father.score|floatformat:"-3" }}</a></div>
+            {% else %}
+              <div class="td">Original Hash</div>
+            {% endif %}
+          </div>
+          <div class="tr">
+            <div class="th">Mother</div>
+            {% if mother %}
+              <div class="td"><a href="{% url mosy.knn.views.detail mother.id %}"><strong>{{ mother.id }}:</strong> {{ mother.score|floatformat:"-3" }}</a></div>
+            {% else %}
+              <div class="td">Original Hash</div>
+            {% endif %}
+          </div>
+          <div class="tr">
+            <div class="th">Generation:</div>
+            <div class="td">{{ generation }}</div>
+          </div>
+          <div class="tr">
+            <div class="th">Fathered Children:</div>
+            <div class="td">
+              {% for child in lsh.father_of.all %}
+                {% with c_score=child.score %}
+                  <div class="fl num">
+                    <a class="{% if c_score > score %}inc{% else %}decr{% endif %}" href="{% url mosy.knn.views.detail child.id %}"><strong>{{ child.id }}:</strong> {{ child.score|floatformat:"-3" }}</a>
+                  </div>
+                {% endwith %}
+                {% if forloop.last %}
+                  <div class="clear"></div>
+                {% endif %}
+              {% empty %}
+                Fathered No Children
+              {% endfor %}
+            </div>
+          <div class="tr">
+            <div class="th">Mothered Children:</div>
+            <div class="td">
+              {% for child in lsh.mother_of.all %}
+                {% with c_score=child.score %}
+                  <div class="fl num">
+                    <a class="{% if c_score > score %}inc{% else %}decr{% endif %}" href="{% url mosy.knn.views.detail child.id %}"><strong>{{ child.id }}:</strong> {{ child.score|floatformat:"-3" }}</a>
+                  </div>
+                {% endwith %}
+                {% if forloop.last %}
+                  <div class="clear"></div>
+                {% endif %}
+              {% empty %}
+                Motherd No Children
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="clear"></div>
+      
+      <footer id="footer">
+        <p>
+      </footer>
+      
+    
+    </div>
+  </body>
+</html>
