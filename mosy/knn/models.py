@@ -25,6 +25,21 @@ class DataPoint(models.Model):
       plist[p.id] = p
     return plist
 
+  @property
+  def pixel_map(self):
+    pixel_count = len(self.vector)/3
+    size = int(sqrt(pixel_count))
+    assert size**2*3 == len(self.vector)
+    pixels = [['#000000']*size]*size
+    for y in range(size):
+      for x in range(size):
+        index = (y*size+x)*3
+        r, g, b = self.vector[index:index+3]
+        pixel = '%0.2X%0.2X%0.2X'%(int(r), int(g), int(b))
+        pixels[y][x] = pixel
+    return pixels
+
+
   def get_knn(self, points = None, debug = False):
     if not points:
       points = DataPoint.objects.all()

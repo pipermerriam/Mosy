@@ -2,7 +2,7 @@ from django.shortcuts import render_to_response, get_object_or_404
 from django.template import RequestContext
 from django.db import connection, transaction
 
-from mosy.knn.models import LSH
+from mosy.knn.models import LSH, DataPoint
 
 def index(request):
   template = 'index.html'
@@ -27,4 +27,15 @@ def detail(request, lsh_id):
 
   context = RequestContext(request)
   return render_to_response(template, data, context)
+
+def datapoint(request, dp_id):
+  template = 'datapoint.html'
+  this_dp = get_object_or_404(LSH, pk = dp_id)
+  data = {}
+  data['dp'] = this_dp
+  data['pixel_map'] = this_dp.pixel_map
+
+  context = RequestContext(request)
+  return render_to_response(template, data, context)
+  
 
