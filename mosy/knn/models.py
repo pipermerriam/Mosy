@@ -147,6 +147,9 @@ class LSH(models.Model):
       else:
         setattr(x, val, getattr(hash_b, val))
 
+    if x.b > x.r:
+      x.b = uniform(0, x.r)
+
     if randint(1, 100) >= 99:
       for val in ('mean', 'std'):
         if uniform(0, 1) <= weight_a:
@@ -167,6 +170,13 @@ class LSH(models.Model):
         x.std += (val - x.mean)**2
       x.std /= len(x.a)
       x.std = sqrt(x.std)
+
+    if x.a == hash_a.a and x.b == hash_a.b and x.r == hash_a.r:
+      print "Duplicate Offspring"
+      return 
+    if x.a == hash_b.a and x.b == hash_b.b and x.r == hash_b.r:
+      print "Duplicate Offspring"
+      return
 
     x.save()
     return x
