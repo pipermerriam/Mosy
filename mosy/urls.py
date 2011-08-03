@@ -9,6 +9,7 @@ urlpatterns = patterns('',
     # url(r'^$', 'mosy.views.home', name='home'),
     # url(r'^mosy/', include('mosy.foo.urls')),
     (r'^$', 'mosy.knn.views.index'),
+    (r'^d/(?P<dp_id>[0-9]+)/$', 'mosy.knn.views.datapoint'),
     (r'^(?P<lsh_id>[0-9]+)/$', 'mosy.knn.views.detail'),
 
     # Uncomment the admin/doc line below to enable admin documentation:

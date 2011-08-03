@@ -2,7 +2,7 @@ from django.shortcuts import render_to_response, get_object_or_404
 from django.template import RequestContext
 from django.db import connection, transaction
 
-from mosy.knn.models import LSH, DataPoint
+from mosy.knn.models import LSH, DataPoint, Neighbors
 
 def index(request):
   template = 'index.html'
@@ -30,10 +30,17 @@ def detail(request, lsh_id):
 
 def datapoint(request, dp_id):
   template = 'datapoint.html'
-  this_dp = get_object_or_404(LSH, pk = dp_id)
+  this_dp = get_object_or_404(DataPoint, pk = dp_id)
   data = {}
   data['dp'] = this_dp
   data['pixel_map'] = this_dp.pixel_map
+  neighbors = Neighbors.objects.get(point = this_dp)
+  neighbors = neighbors.neighbors[:10]
+  neighbors = DataPoint.objects.filter(pk__in = neighbors)
+  for neighbor in neighbors:
+    neighbor.distance = this_dp.dist(neighbor)
+  data['neighbors'] = sorted(neighbors, key = lambda point: point.distance)
+
 
   context = RequestContext(request)
   return render_to_response(template, data, context)

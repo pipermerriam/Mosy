@@ -15,9 +15,12 @@
       div.tr div.th { float: left; display: inline; width: 100px; height: auto; }
       div.tr div.td { float: left; display: inline; width: 600px; height: auto; }
       div.fl { float: left; display: inline; }
+      div.fr { float: right; display: inline; }
+      div.num { width: 150px; }
       div.datapoint {}
       div.datapoint div.pr {}
-      div.datapoint div.p {}
+      div.datapoint div.pr div.pixel {float: left; display: inline; width: 20px; height: 20px;}
+      .clear { clear: both; }
     </style>
   </head>
   <body>
@@ -29,113 +32,50 @@
       <div class="clear"></div>
       
       <div id="main">
-        <h2>Hash Function {{ lsh.id }}</h2>
+        <h2>Data Point {{ dp.id }}</h2>
         <div class="section">
-          <h3>Performance</h3>
-          <div class="tr">
-            <div class="th">#ID</div>
-            <div class="td">{{ lsh.id }}</div>
-          </div>
-          <div class="tr">
-            <div class="th">Collisions</div>
-            <div class="td">{{ lsh.collisions|floatformat:"-3" }}</div>
-          </div>
-          <div class="tr">
-            <div class="th">P1</div>
-            <div class="td">{{ lsh.p1|floatformat:"-3" }}</div>
-          </div>
-          <div class="tr">
-            <div class="th">P2</div>
-            <div class="td">{{ lsh.p2|floatformat:"-3" }}</div>
-          </div>
-          <div class="tr">
-            <div class="th">Score</div>
-            <div class="td">{{ score }} {% if parent %}({{ change }}){% endif %}</div>
-          </div>
-        </div>
-        <div class="section">
-          <h3>Details</h3>
+          <h3>Info</h3>
           <div class="tr">
             <div class="th">A</div>
             <div class="td">
-              {% for val in lsh.a %}
+              {% for val in dp.vector %}
                 <div class="fl num"><strong>{{ forloop.counter0 }}:</strong> {{ val|floatformat:"-3" }}</div>
               {% endfor %}
               <div class="clear"></div>
             </div>
           </div>
           <div class="tr">
-            <div class="th">Mean</div>
-            <div class="td">{{ lsh.mean|floatformat:"-3" }}</div>
-          </div>
-          <div class="tr">
-            <div class="th">Stdev</div>
-            <div class="td">{{ lsh.std|floatformat:"-3" }}</div>
-          </div>
-          <div class="tr">
-            <div class="th">B</div>
-            <div class="td">{{ lsh.b|floatformat:"-3" }}</div>
-          </div>
-          <div class="tr">
-            <div class="th">R</div>
-            <div class="td">{{ lsh.r }}</div>
-          </div>
-        </div>
-        <div class="section">
-          <h3>Genetics</h3>
-          <div class="tr">
-            <div class="th">Father</div>
-            {% if father %}
-              <div class="td"><a href="{% url mosy.knn.views.detail father.id %}"><strong>{{ father.id }}:</strong> {{ father.score|floatformat:"-3" }}</a></div>
-            {% else %}
-              <div class="td">Original Hash</div>
-            {% endif %}
-          </div>
-          <div class="tr">
-            <div class="th">Mother</div>
-            {% if mother %}
-              <div class="td"><a href="{% url mosy.knn.views.detail mother.id %}"><strong>{{ mother.id }}:</strong> {{ mother.score|floatformat:"-3" }}</a></div>
-            {% else %}
-              <div class="td">Original Hash</div>
-            {% endif %}
-          </div>
-          <div class="tr">
-            <div class="th">Generation:</div>
-            <div class="td">{{ generation }}</div>
-          </div>
-          <div class="tr">
-            <div class="th">Fathered Children:</div>
+            <div class="th">Image</div>
             <div class="td">
-              {% for child in lsh.father_of.all %}
-                {% with c_score=child.score %}
-                  <div class="fl num">
-                    <a class="{% if c_score > score %}inc{% else %}decr{% endif %}" href="{% url mosy.knn.views.detail child.id %}"><strong>{{ child.id }}:</strong> {{ child.score|floatformat:"-3" }}</a>
+              <div class="datapoint">
+                {% for row in pixel_map %}
+                  <div class="pr">
+                    {% for pixel in row %}
+                      <div class="pixel" style="background-color:{{ pixel }};"></div>
+                    {% endfor %}
+                    <div class="clear"></div>
                   </div>
-                {% endwith %}
-                {% if forloop.last %}
-                  <div class="clear"></div>
-                {% endif %}
-              {% empty %}
-                Fathered No Children
-              {% endfor %}
-            </div>
-          <div class="tr">
-            <div class="th">Mothered Children:</div>
-            <div class="td">
-              {% for child in lsh.mother_of.all %}
-                {% with c_score=child.score %}
-                  <div class="fl num">
-                    <a class="{% if c_score > score %}inc{% else %}decr{% endif %}" href="{% url mosy.knn.views.detail child.id %}"><strong>{{ child.id }}:</strong> {{ child.score|floatformat:"-3" }}</a>
-                  </div>
-                {% endwith %}
-                {% if forloop.last %}
-                  <div class="clear"></div>
-                {% endif %}
-              {% empty %}
-                Motherd No Children
-              {% endfor %}
+                {% endfor %}
+              </div>
             </div>
           </div>
+          {% for neighbor in neighbors %}
+            <div class="tr">
+              <div class="th">Neighbor {{ neighbor.id }} {{ neighbor.distance|floatformat:"-3" }}</div>
+              <div class="td">
+                <div class="datapoint">
+                  {% for row in neighbor.pixel_map %}
+                    <div class="pr">
+                      {% for pixel in row %}
+                        <div class="pixel" style="background-color:{{ pixel }};"></div>
+                      {% endfor %}
+                      <div class="clear"></div>
+                    </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          {% endfor %}
         </div>
       </div>
       
