@@ -27,20 +27,42 @@ class DataPoint(models.Model):
 
   @property
   def pixel_map(self):
+    if not hasattr(self, '_pixel_map'):
+      pixel_count = len(self.vector)/3
+      size = int(sqrt(pixel_count))
+      assert size**2*3 == len(self.vector)
+      pixel_map = []
+      for y in range(size):
+        pixels = []
+        for x in range(size):
+          index = (y*size+x)*3
+          r, g, b = self.vector[index:index+3]
+          pixel = '#%0.2X%0.2X%0.2X'%(int(r), int(g), int(b))
+          pixels.append(pixel)
+        pixel_map.append(pixels)
+      self._pixel_map = pixel_map
+    return self._pixel_map
+
+  def euclidean(self, other):
+    assert len(self.vector) == len(other.vector)
+    d = 0
+    for a, b in zip(self.vector, other.vector):
+      d += (a-b)**2
+    return sqrt(d)
+
+  def dist(self, other):
+    assert len(self.vector) == len(other.vector)
+    d = 0.0
     pixel_count = len(self.vector)/3
     size = int(sqrt(pixel_count))
     assert size**2*3 == len(self.vector)
-    pixel_map = []
     for y in range(size):
-      pixels = []
       for x in range(size):
         index = (y*size+x)*3
-        r, g, b = self.vector[index:index+3]
-        pixel = '#%0.2X%0.2X%0.2X'%(int(r), int(g), int(b))
-        pixels.append(pixel)
-      pixel_map.append(pixels)
-    return pixel_map
-
+        r1, g1, b1 = self.vector[index:index+3]
+        r2, g2, b2 = other.vector[index:index+3]
+        d += (r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2
+    return sqrt(d)
 
   def get_knn(self, points = None, debug = False):
     if not points:
@@ -65,24 +87,7 @@ class DataPoint(models.Model):
     return neighbors
 
   def dist2(self, other, exact = False):
-    d = 0
-    for a, b in zip(self.vector, other.vector):
-      d += (a-b)**2
-    return sqrt(d)
 
-  def dist(self, other):
-    assert len(self.vector) == len(other.vector)
-    d = 0.0
-    pixel_count = len(self.vector)/3
-    size = int(sqrt(pixel_count))
-    assert size**2*3 == len(self.vector)
-    for y in range(size):
-      for x in range(size):
-        index = (y*size+x)*3
-        r1, g1, b1 = self.vector[index:index+3]
-        r2, g2, b2 = other.vector[index:index+3]
-        d += (r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2
-    return sqrt(d)
 
 
 class Neighbors(models.Model):
