@@ -106,26 +106,30 @@ class LSH(models.Model):
         for lsh in null_query:
           lsh.test(plist = plist)
       print "Generating Parents for new Generations"
-      parents_query = cls.objects.raw('SELECT id, collisions, a, b, r, mean, std, p1, p2 FROM knn_lsh ORDER BY p1-p2 DESC LIMIT 0, 60')
-      parents = [lsh for lsh in parents_query]
-      print "Grabbing random breeders"
-      for i in range(3):
-        lucky_query = cls.objects.raw('SELECT id, collisions, a, b, r, mean, std, p1, p2 FROM knn_lsh ORDER BY p1-p2 DESC LIMIT %s, 1', [randint(61, 601)])
-        parents.append(lucky_query[0])
-      spawn = cls()
-      print "Spawning Random New Hash"
-      spawn.test(plist = plist)
-      parents.append(spawn)
-      assert len(parents) == 64
-      for hash_a, hash_b in combinations(parents, 2):
-        if hash_a.score > hash_b.score:
-          father = hash_a
-          mother = hash_b
-        else:
-          father = hash_b
-          mother = hash_a
-        child = LSH.breed(father, mother)
-        print "Breeding Father(%i: %f) and Mother(%i: %f)"%(father.id, father.score, mother.id, mother.score)
+      cls.spawn(plist = plist)
+
+  @classmethod
+  def spawn(cls, top = 60, other = 10, plist = None):
+    if plist == None:
+      plist = DataPoint.get_plist()
+    parents_query = cls.objects.raw('SELECT id, collisions, a, b, r, mean, std, p1, p2 FROM knn_lsh ORDER BY p1-p2 DESC LIMIT 0, %s', [top])
+    parents = [lsh for lsh in parents_query]
+    print "Grabbing random breeders"
+    for i in range(other):
+      new_breeder = cls()
+      new_breeder.test(plist = plist)
+      parents.append(new_breeder)
+    assert len(parents) == top + other
+    for hash_a, hash_b in combinations(parents, 2):
+      if hash_a.score > hash_b.score:
+        father = hash_a
+        mother = hash_b
+      else:
+        father = hash_b
+        mother = hash_a
+      child = cls.breed(father, mother)
+      print "Breeding Father(%i: %f) and Mother(%i: %f)"%(father.id, father.score, mother.id, mother.score)
+    
 
   @classmethod
   def breed(cls, hash_a, hash_b):
@@ -157,6 +161,13 @@ class LSH(models.Model):
           x.a.append(hash_a.a[i])
         else:
           x.a.append(hash_b.a[i])
+      x.mean = sum(x.a)/float(len(x.a))
+      x.std = 0.0
+      for val in x.a:
+        x.std += (val - x.mean)**2
+      x.std /= len(x.a)
+      x.std = sqrt(x.std)
+
     x.save()
     return x
 
@@ -187,7 +198,7 @@ class LSH(models.Model):
     start_time = time()
     if early_exit:
       cursor = connection.cursor()
-      cursor.execute("SELECT p1-p2 AS `score` FROM `knn_lsh` ORDER BY p1-p2 DESC LIMIT 100,1")
+      cursor.execute("SELECT p1-p2 AS `score` FROM `knn_lsh` ORDER BY p1-p2 DESC LIMIT 1000,1")
       target_score = float(cursor.fetchone()[0])
     sample_set = sample(range(1, 5001), 200)
     p1_overall = 0.0
@@ -237,8 +248,8 @@ class LSH(models.Model):
       p2_overall = (p2_overall*n+p2_count)/(n+1)
       p3_overall = (p3_overall*n+p3_count)/(n+1)
       collisions_overall = (collisions_overall*n+collisions)/(n+1)
-      if early_exit and n >= 160:
-        if p1_overall - p2_overall < target_score*(float(n)/400-0.2):
+      if early_exit and n >= 80:
+        if p1_overall - p2_overall < target_score*(float(n)/200-0.2):
           print "Early Exit Criteria Met at %i"%n
           break
 
