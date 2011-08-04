@@ -15,11 +15,35 @@ from mosy.behaviors.models import *
 FILE_NAME = re.compile('^([0-9]+)\.(jpg|jpeg|gif|bmp|png)$')
 
 def upload_to(instance, filename):
-  return os.path.join('stock', '%s'%randint(100, 199), '%s'%randint(100, 199), os.path.basename(filename))
+  return os.path.join(instance.BASE_PATH , '%s'%randint(100, 199), '%s'%randint(100, 199), os.path.basename(filename))
 
-class StockImage(TimeStampable):
+class BaseImage(TimeStampable)
   image = models.ImageField(upload_to = upload_to)
   hash = models.CharField(max_length = 256, null = True)
+
+  class Meta:
+    abstract = True
+
+  @property
+  def extension(self):
+    if not hasattr(self, '_extension'):
+      pass
+    return self._extension
+
+  @classmethod
+  def hash_image(cls, f):
+    f.seek(0)
+    file_hasher = hashlib.sha256()
+    while True:
+      buf = f.read(8192)
+      if buf:
+        file_hasher.update(buf)
+        continue
+      break
+    return file_hasher.hexdigest()
+
+class StockImage(BaseImage):
+  BASE_PATH = 'stock'
 
   @property
   def mimetype(self):
@@ -27,11 +51,6 @@ class StockImage(TimeStampable):
       pass
     return self._mimetype
 
-  @property
-  def extension(self):
-    if not hasattr(self, '_extension'):
-      pass
-    return self._extension
 
   @classmethod
   def crawl(cls, directory):
@@ -67,14 +86,8 @@ class StockImage(TimeStampable):
         hash = im_hash,
         )
 
-  @classmethod
-  def hash_image(cls, f):
-    f.seek(0)
-    file_hasher = hashlib.sha256()
-    while True:
-      buf = f.read(8192)
-      if buf:
-        file_hasher.update(buf)
-        continue
-      break
-    return file_hasher.hexdigest()
+  def export_tile(self, tile_size):
+    pass
+
+class Tile(BaseImage):
+  BASE_PATH = 'tile'
