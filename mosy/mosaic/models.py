@@ -91,3 +91,8 @@ class StockImage(BaseImage):
 
 class Tile(BaseImage):
   BASE_PATH = 'tile'
+
+  @classmethod
+  def levenshtein(cls, tile_a, tile_b):
+    pass
+    
