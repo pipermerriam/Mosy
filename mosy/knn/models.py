@@ -16,14 +16,20 @@ TOLERANCE = 1.2
 
 class DataPoint(models.Model):
   vector = PickledObjectField()
+  length = models.IntegerField()
 
   @classmethod
-  def get_plist(cls):
-    plist = {}
+  def get_points(cls):
+    points = {}
     for p in cls.objects.iterator():
-      p.neighbors = Neighbors.objects.get(point = p).neighbors
-      plist[p.id] = p
-    return plist
+      points[p.id] = p
+    return points
+
+  @property
+  def neighbors(self):
+    if not hasattr(self, '_neighbors'):
+      pass
+    return self._neighbors
 
   @property
   def pixel_map(self):
@@ -50,7 +56,7 @@ class DataPoint(models.Model):
       d += (a-b)**2
     return sqrt(d)
 
-  def dist(self, other):
+  def pixel_distance(self, other):
     assert len(self.vector) == len(other.vector)
     d = 0.0
     pixel_count = len(self.vector)/3
@@ -85,10 +91,6 @@ class DataPoint(models.Model):
       n.neighbors = nl
       n.save()
     return neighbors
-
-  def dist2(self, other, exact = False):
-
-
 
 class Neighbors(models.Model):
   point = models.ForeignKey(DataPoint)
