@@ -162,7 +162,12 @@ class Tile(BaseImage):
     if not hasattr(self, '_rgb_list'):
       self.image.open('rb')
       im = Image.open(self.image.file)
-      im_seq = im.getdata()
+      if im.mode == 'L':
+        self._rgb_list = []
+        for val in self.mono_list:
+          self._rgb_list += append([val]*3)
+      else:
+        im_seq = im.getdata()
       for y_base in range(0, self.image.height, chunk_size):
         for x_base in range(0, self.image.width, chunk_size):
 
