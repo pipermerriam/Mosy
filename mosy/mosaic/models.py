@@ -158,13 +158,22 @@ class Tile(BaseImage):
     pass
 
   @property
-  def rgb_list(self):
+  def rgb_list(self, chunk_size = 10):
     if not hasattr(self, '_rgb_list'):
-      pass
+      self.image.open('rb')
+      im = Image.open(self.image.file)
+      im_seq = im.getdata()
+      for y_base in range(0, self.image.height, chunk_size):
+        for x_base in range(0, self.image.width, chunk_size):
+
+          pass
     return self._rgb_list
 
   @property
   def mono_list(self):
+      self.image.open('rb')
+      im = Image.open(self.image.file)
+      im = im.convert('L')
     if not hasattr(self, '_mono_list'):
       pass
     return self._mono_list
