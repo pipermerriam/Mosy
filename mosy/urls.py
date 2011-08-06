@@ -8,6 +8,7 @@ urlpatterns = patterns('',
     # Examples:
     # url(r'^$', 'mosy.views.home', name='home'),
     # url(r'^mosy/', include('mosy.foo.urls')),
+    (r'^compare/$', 'mosy.mosaic.views.compare'),
     (r'^$', 'mosy.knn.views.index'),
     (r'^d/(?P<dp_id>[0-9]+)/$', 'mosy.knn.views.datapoint'),
     (r'^(?P<lsh_id>[0-9]+)/$', 'mosy.knn.views.detail'),

@@ -5,9 +5,10 @@ import hashlib
 import Levenshtein
 import mimetypes
 
-from random import randint
+from math import sqrt, log
+from random import randint, uniform, shuffle
 from PIL.ImageFile import Parser
-from PIL import Image
+from PIL import Image, ImageStat
 from tempfile import NamedTemporaryFile
 
 from django.core.files import File
@@ -134,56 +135,250 @@ class StockImage(BaseImage):
 
 class Tile(BaseImage):
   BASE_PATH = 'tile'
+  CHUNK_SIZE = 10
   origin = models.ForeignKey(StockImage, related_name = '+')
   size = models.IntegerField()
 
+  @classmethod
+  def get_points(cls):
+    points = cls.objects.all()
+    for p in points:
+      p.rgb_list, p.mono_list, p.str_list
+    return points
+
+  @classmethod
+  def compare(cls, tile_a, tile_b, weight = None, equal = False):
+    assert tile_a.size == tile_b.size
+    if weight == None:
+      if equal:
+        weight = (100.0, 100.0, 100.0)
+      weight = tuple([uniform(1, 100) for i in range(3)])
+    mse = cls.mse(tile_a, tile_b)
+
+    levenshtein = cls.levenshtein(tile_a, tile_b) * weight[0] / sum(weight)
+    psnr = cls.psnr(tile_a, tile_b, mse = mse) * weight[1] / sum(weight)
+    nrmsd = cls.nrmsd(tile_a, tile_b, mse = mse) * weight[2] / sum(weight)
+    
+    return levenshtein + psnr + nrmsd
+  
   #Calculate the levenshtein distance between the two images
   @classmethod
   def levenshtein(cls, tile_a, tile_b):
     assert tile_a.size == tile_b.size
-    return Levenshtein.distance(tile_a.str_list, tile_b.str_list)
+    lv = Levenshtein.distance(tile_a.str_list, tile_b.str_list)
+    return float(lv)/(len(tile_a.rgb_list))
 
   #Calculate the mean square error between images
   @classmethod
   def mse(cls, tile_a, tile_b):
-    pass
+    assert tile_a.size == tile_b.size
+    tmp = sum((a-b)**2 for a, b in zip(tile_a.rgb_list, tile_b.rgb_list))
+    return float(tmp)/len(tile_a.rgb_list)
 
   #Calculate the peak signal-to-noise ratio
   @classmethod
-  def psnr(cls, tile_a, tile_b):
-    pass
+  def psnr(cls, tile_a, tile_b, mse = None):
+    assert tile_a.size == tile_b.size
+    if mse == None:
+      mse = cls.mse(tile_a, tile_b)
+    return 20 * log(255/sqrt(mse), 10)
 
   @classmethod
-  def nrmsd(cls, tile_a, tile_b):
-    pass
+  def nrmsd(cls, tile_a, tile_b, mse = None):
+    assert tile_a.size == tile_b.size
+    if mse == None:
+      mse = cls.mse(tile_a, tile_b)
+    return sqrt(mse) / 255
+
+  def get_nn(self, points = None, weight = None, debug = False):
+    if not points:
+      points = Tile.get_points()
+    nn = None
+    for other in points:
+      if other.id == self.id:
+        continue
+      other.distance = Tile.compare(self, other, weight = weight)
+      if not nn or other.distance < nn.distance:
+        nn = other
+        if debug:
+          print "New Neighbor: %i - %f"%(other.id, other.distance)
+    return nn
+
+  def get_knn(self, points = None, weight = None, debug = False):
+    if not points:
+      points = Tile.get_points()
+    neighbors = []
+    for other in points:
+      if other.id == self.id:
+        continue
+      other.distance = Tile.compare(self, other, weight = weight)
+      if len(neighbors) < 200 or other.distance < neighbors[0].distance:
+        neighbors.append(other)
+        neighbors = sorted(neighbors, key = lambda p: p.distance)
+        neighbors = neighbors[:200]
+        neighbors.reverse()
+        if debug:
+          print "New Neighbor: %i - %f"%(other.id, other.distance)
+    return neighbors
+    
+  @property
+  def pixel_map(self):
+    if not hasattr(self, '_pixel_map'):
+      size = self.size / self.CHUNK_SIZE
+      assert size * self.CHUNK_SIZE == self.size
+      pixel_map = []
+      for y in range(size):
+        pixels = []
+        for x in range(size):
+          index = (y*size+x)*3
+          r, g, b = self.rgb_list[index:index+3]
+          pixel = '#%0.2X%0.2X%0.2X'%(int(r), int(g), int(b))
+          pixels.append(pixel)
+        pixel_map.append(pixels)
+      self._pixel_map = pixel_map
+    return self._pixel_map
+    
 
   @property
-  def rgb_list(self, chunk_size = 10):
+  def rgb_list(self):
+    assert self.size % self.CHUNK_SIZE == 0
     if not hasattr(self, '_rgb_list'):
       self.image.open('rb')
       im = Image.open(self.image.file)
-      if im.mode == 'L':
-        self._rgb_list = []
-        for val in self.mono_list:
-          self._rgb_list += append([val]*3)
-      else:
-        im_seq = im.getdata()
-      for y_base in range(0, self.image.height, chunk_size):
-        for x_base in range(0, self.image.width, chunk_size):
+      im.load()
+      self.image.close()
 
-          pass
+      if im.mode in ('P', 'RGBA'):
+        im = im.convert('RGB')
+
+      self._rgb_list = []
+      if im.mode == 'L':
+        for val in self.mono_list:
+          self._rgb_list += [val]*3
+      else:
+        for y in range(0, self.image.height, self.CHUNK_SIZE):
+          for x in range(0, self.image.width, self.CHUNK_SIZE):
+            self._rgb_list += ImageStat.Stat(im.crop((x, y, x+10, y+10))).mean
+      self._rgb_list = tuple(self._rgb_list)
+    assert len(self._rgb_list) == (self.size/self.CHUNK_SIZE)**2*3
     return self._rgb_list
 
   @property
   def mono_list(self):
+    assert self.size % self.CHUNK_SIZE == 0
+    if not hasattr(self, '_mono_list'):
       self.image.open('rb')
       im = Image.open(self.image.file)
+      im.load()
+      self.image.close()
+
       im = im.convert('L')
-    if not hasattr(self, '_mono_list'):
-      pass
+      self._mono_list = []
+      for y in range(0, self.image.height, self.CHUNK_SIZE):
+        for x in range(0, self.image.width, self.CHUNK_SIZE):
+          self._mono_list += ImageStat.Stat(im.crop((x, y, x+10, y+10))).mean
+      self._mono_list = tuple(self._mono_list)
+    assert len(self._mono_list) == (self.size/self.CHUNK_SIZE)**2
     return self._mono_list
 
+  @property
   def str_list(self):
     if not hasattr(self, '_str_list'):
-      self._str_list = ''.join([chr(int(x)) for x in self.mono_list])
+      self._str_list = ''.join([chr(int(round(x))) for x in self.rgb_list])
     return self._str_list
+
+class CompareMethod(TimeStampable):
+  mother = models.ForeignKey('self', related_name = 'mother_of', null = True)
+  father = models.ForeignKey('self', related_name = 'father_of', null = True)
+
+  lw = models.FloatField()
+  nw = models.FloatField()
+  pw = models.FloatField()
+
+
+  @classmethod
+  def generate(cls, count = 1):
+    gens = []
+    while len(gens) < count:
+      x, created = cls.objects.get_or_create(
+        lw = uniform(1, 100),
+        nw = uniform(1, 100),
+        pw = uniform(1, 100),
+        )
+      if created:
+        gens.append(x)
+    return gens
+
+  @property
+  def weight(self):
+    return self.lw, self.nw, self.pw
+
+  def generate_tests(self, other, count = 25, points = None):
+    if points == None:
+      points = Tile.get_points()
+    tests = []
+    while len(tests) < count:
+      tile = Tile.objects.order_by('?')[:1].get()
+      methods = [self, other]
+      shuffle(methods)
+      method_a, method_b = methods
+      tile_a = tile.get_nn(points = points, weight = method_a.weight)
+      tile_b = tile.get_nn(points = points, weight = method_b.weight)
+
+      x, created = CompareTest.objects.get_or_create(
+        target = tile,
+        tile_a = tile_a,
+        tile_b = tile_b,
+        method_a = method_a,
+        method_b = method_b,
+        )
+      if created:
+        tests.append(x)
+    return tests
+
+  @classmethod
+  def evolve(cls):
+    pass
+
+  @classmethod
+  def breed(cls, method_a, method_b):
+    score_a = method_a.score
+    score_b = method_b.score
+    if score_a < score_b:
+      x = cls.breed(method_b, method_a)
+    else:
+      weight_a = max(score_a/(score_a + score_b), 0.1)
+      weight_b = max(score_b/(score_a + score_b), 0.1)
+
+      x = cls()
+      for val in ('lw', 'nw', 'pw'):
+        if uniform(0,1) < weight_a:
+          setattr(x, val, getattr(method_a, val))
+        else:
+          setattr(x, val, getattr(method_b, val))
+
+      x, created = cls.objects.get_or_create(
+        lw = x.lw,
+        nw = x.nw,
+        pw = x.pw,
+        )
+      if created:
+        x.father = method_a
+        x.mother = method_b
+        x.save()
+      else:
+        print "Duplicate Offspring - Father(%i) : Mother(%i)"%(method_a.id, method_b.id)
+    return x
+
+  @property
+  def score(self):
+    pass
+
+class CompareTest(TimeStampable):
+  target = models.ForeignKey(Tile)
+  tile_a = models.ForeignKey(Tile, related_name = '+')
+  tile_b = models.ForeignKey(Tile, related_name = '+')
+
+  winner = models.ForeignKey(CompareMethod, related_name = '+', null = True)
+  method_a = models.ForeignKey(CompareMethod, related_name = '+')
+  method_b = models.ForeignKey(CompareMethod, related_name = '+')

@@ -1,0 +1,10 @@
+<div class="datapoint">
+{% for row in pixel_map %}
+  <div class="pr">
+    {% for pixel in row %}
+      <div class="pixel" style="background-color:{{ pixel }};"></div>
+    {% endfor %}
+    <div class="clear"></div>
+  </div>
+{% endfor %}
+</div>
