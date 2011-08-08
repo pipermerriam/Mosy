@@ -13,7 +13,7 @@
       div.main { margin: 10px 0; }
       div.tr { float: left; display: inline; width: 100%; height: auto; margin: 0px 0px 5px 0px; }
       div.tr div.th { float: left; display: inline; width: 100px; height: auto; }
-      div.tr div.td { float: left; display: inline; width: 200px; height: auto; }
+      div.tr div.td { float: left; display: inline; margin-right: 10px; margin-bottom: 20px;}
       div.fl { float: left; display: inline; }
       div.fr { float: right; display: inline; }
       div.num { width: 150px; }
@@ -26,42 +26,52 @@
   <body>
     <div>
       <header id="header">
-        <h1>LSH Result</h1>
+        <h1>{{ remaining }} Remaining</h1>
       </header>
       
       <div class="clear"></div>
-      
-      <div id="main">
-        <h2>Data Point {{ dp.id }}</h2>
-        <div class="section">
-          <h3>Info</h3>
-          <div class="tr">
-            <div class="th">A:</div>
-            <div class="td">
-              {% with pixel_map=target_map %}
-                {% include 'snippets/pixel_map.html' %}
-              {% endwith %}
+      {% if remaining %}
+        <div id="main">
+          <h2>Test ID: {{ test_id }}</h2>
+          <div class="section">
+            <h3>Which is closer</h3>
+            <div class="tr">
+              <div class="th">A:</div>
+              <div class="td">
+                {% with pixel_map=target_map %}
+                  {% include 'snippets/pixel_map.html' %}
+                {% endwith %}
+              </div>
+              <div class="td">
+                <a href="?id={{ test_id }}&w=a">
+                  {% with pixel_map=a_map %}
+                    {% include 'snippets/pixel_map.html' %}
+                  {% endwith %}
+                </a>
+              </div>
             </div>
-            <div class="td">
-              {% with pixel_map=a_map %}
-                {% include 'snippets/pixel_map.html' %}
-              {% endwith %}
+            <div class="tr">
+              <div class="th">A:</div>
+              <div class="td">
+                {% with pixel_map=target_map %}
+                  {% include 'snippets/pixel_map.html' %}
+                {% endwith %}
+              </div>
+              <div class="td">
+                <a href="?id={{ test_id }}&w=a">
+                  {% with pixel_map=b_map %}
+                    {% include 'snippets/pixel_map.html' %}
+                  {% endwith %}
+                </a>
+              </div>
+            </div>
+            <div class="tr">
+              <div class="th">
+                <a href="?id={{ test_id }}&w=c">NEITHER</a>
+              </div>
             </div>
           </div>
-          <div class="tr">
-            <div class="th">A:</div>
-            <div class="td">
-              {% with pixel_map=target_map %}
-                {% include 'snippets/pixel_map.html' %}
-              {% endwith %}
-            </div>
-            <div class="td">
-              {% with pixel_map=b_map %}
-                {% include 'snippets/pixel_map.html' %}
-              {% endwith %}
-            </div>
-          </div>
-        </div>
+        {% endif %}
       </div>
       
       <div class="clear"></div>

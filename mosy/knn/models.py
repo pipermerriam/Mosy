@@ -9,9 +9,11 @@ from math import sqrt, floor
 from threading import Thread
 from time import time
 
+from mosy.mosaic.models import Tile
+
 # Create your models here.
 
-RADIUS = 300
+RADIUS = 3.4
 TOLERANCE = 1.2
 
 class DataPoint(models.Model):
@@ -128,35 +130,35 @@ class LSH(models.Model):
 
   @classmethod
   def evolve(cls):
-    plist = DataPoint.get_plist()
+    points = Tile.get_points()
     while True:
-      if cls.objects.count() < 4000:
+      if cls.objects.count() < 1000:
         if cls.objects.filter(collisions = None):
           for x in cls.objects.filter(collisions = None):
-            x.test(plist = plist)
+            x.test(points = points)
         print "Generating Base Objects"
-        for i in range(4000-cls.objects.count()):
+        for i in range(1000-cls.objects.count()):
           x = cls()
-          x.test(plist = plist)
+          x.test(points = points)
       null_query = cls.objects.defer('father', 'mother').filter(collisions = None)
       if null_query.exists():
         assert len(null_query)
         print "Testing New Children"
         for lsh in null_query:
-          lsh.test(plist = plist)
+          lsh.test(points = points)
       print "Generating Parents for new Generations"
-      cls.spawn(plist = plist)
+      cls.spawn(points = points)
 
   @classmethod
-  def spawn(cls, top = 60, other = 10, plist = None):
-    if plist == None:
-      plist = DataPoint.get_plist()
+  def spawn(cls, top = 60, other = 10, points = None):
+    if points == None:
+      points = Tile.get_points()
     parents_query = cls.objects.raw('SELECT id, collisions, a, b, r, mean, std, p1, p2 FROM knn_lsh ORDER BY p1-p2 DESC LIMIT 0, %s', [top])
     parents = [lsh for lsh in parents_query]
     print "Grabbing random breeders"
     for i in range(other):
       new_breeder = cls()
-      new_breeder.test(plist = plist)
+      new_breeder.test(points = points)
       parents.append(new_breeder)
     assert len(parents) == top + other
     for hash_a, hash_b in combinations(parents, 2):
@@ -241,9 +243,12 @@ class LSH(models.Model):
     dp = sum([x*y for x, y in zip(self.a, v)])
     return floor((dp + self.b)/float(self.r))
 
-  def test(self, plist = None, early_exit = True):
-    if plist == None:
-      plist = DataPoint.get_plist()
+  def test(self, points = None, early_exit = False):
+    if points == None:
+      points = Tile.get_points()
+    plist = {}
+    for p in points:
+      plist[p.id] = p
     start_time = time()
     if early_exit:
       cursor = connection.cursor()
@@ -258,33 +263,33 @@ class LSH(models.Model):
     for n in range(len(sample_set)):
       #test_point = DataPoint.objects.get(pk = sample_set.pop())
       test_point = plist[sample_set.pop()]
-      test_point.projection = self.project(test_point.vector)
+      test_point.projection = self.project(test_point.rgb_list)
 
       #close_points = Neighbors.objects.get(point = test_point).neighbors
-      close_points = test_point.neighbors
+      close_points = test_point.get_knn(points = points)
 
-      points = range(1, 5001)
+      sample_points = range(1, 5001)
       for point in close_points:
-        points.remove(point)
-      points.remove(test_point.id)
-      points = sample(points, 200)
-      points += close_points
-      points = [plist[p] for p in points]
+        sample_points.remove(point)
+      sample_points.remove(test_point.id)
+      sample_points = sample(sample_points, 200)
+      sample_points += close_points
+      sample_points = [plist[p] for p in sample_points]
       #points = list(DataPoint.objects.filter(pk__in = points))
 
-      assert len(points) == 400
-      for point in points:
-        point.distance = test_point.dist(point)
-        point.projection = self.project(point.vector)
+      assert len(sample_points) == 400
+      for point in sample_points:
+        point.distance = Tile.distance(point)
+        point.projection = self.project(point.rgb_list)
 
-      shuffle(points)
+      shuffle(sample_points)
 
       collisions = 0
       p1_count = 0
       p2_count = 0
       p3_count = 0
       for i in range(400):
-        point = points[i]
+        point = sample_points[i]
         if test_point.projection == point.projection:
           collisions += 1
           if point.distance <= RADIUS:

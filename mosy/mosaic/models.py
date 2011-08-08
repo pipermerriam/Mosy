@@ -5,14 +5,15 @@ import hashlib
 import Levenshtein
 import mimetypes
 
+from itertools import combinations
 from math import sqrt, log
-from random import randint, uniform, shuffle
+from random import randint, uniform, shuffle, normalvariate
 from PIL.ImageFile import Parser
 from PIL import Image, ImageStat
 from tempfile import NamedTemporaryFile
 
 from django.core.files import File
-from django.db import models
+from django.db import models, connection
 
 from mosy.behaviors.models import *
 
@@ -147,19 +148,34 @@ class Tile(BaseImage):
     return points
 
   @classmethod
+  def distance(cls, tile_a, tile_b):
+    weights = (
+      (18.56569, 11.86457),
+      (16.26291, 21.83507),
+      (25.23813, 18.94915),
+      (27.06847, 17.89424),
+      (30.59219, 24.93490),
+      (17.26454, 18.09663),
+      )
+    d = 0.0
+    for weight in weights:
+      d += cls.compare(tile_a, tile_b, weight)
+    return d
+
+  @classmethod
   def compare(cls, tile_a, tile_b, weight = None, equal = False):
     assert tile_a.size == tile_b.size
     if weight == None:
       if equal:
-        weight = (100.0, 100.0, 100.0)
-      weight = tuple([uniform(1, 100) for i in range(3)])
+        weight = (100.0, 100.0)
+      weight = tuple([normalvariate(20, 5) for i in range(2)])
     mse = cls.mse(tile_a, tile_b)
 
     levenshtein = cls.levenshtein(tile_a, tile_b) * weight[0] / sum(weight)
-    psnr = cls.psnr(tile_a, tile_b, mse = mse) * weight[1] / sum(weight)
-    nrmsd = cls.nrmsd(tile_a, tile_b, mse = mse) * weight[2] / sum(weight)
+    #psnr = cls.psnr(tile_a, tile_b, mse = mse) * weight[1] / sum(weight)
+    nrmsd = cls.nrmsd(tile_a, tile_b, mse = mse) * weight[1] / sum(weight)
     
-    return levenshtein + psnr + nrmsd
+    return levenshtein + nrmsd
   
   #Calculate the levenshtein distance between the two images
   @classmethod
@@ -197,29 +213,29 @@ class Tile(BaseImage):
     for other in points:
       if other.id == self.id:
         continue
-      other.distance = Tile.compare(self, other, weight = weight)
+      other.distance = Tile.distance(self, other)
       if not nn or other.distance < nn.distance:
         nn = other
         if debug:
           print "New Neighbor: %i - %f"%(other.id, other.distance)
     return nn
 
-  def get_knn(self, points = None, weight = None, debug = False):
-    if not points:
-      points = Tile.get_points()
-    neighbors = []
-    for other in points:
-      if other.id == self.id:
-        continue
-      other.distance = Tile.compare(self, other, weight = weight)
-      if len(neighbors) < 200 or other.distance < neighbors[0].distance:
-        neighbors.append(other)
-        neighbors = sorted(neighbors, key = lambda p: p.distance)
-        neighbors = neighbors[:200]
-        neighbors.reverse()
-        if debug:
-          print "New Neighbor: %i - %f"%(other.id, other.distance)
-    return neighbors
+  def get_knn(self, points = None):
+    if not hasattr(self, '_knn'):
+      if not points:
+        points = Tile.get_points()
+      neighbors = []
+      for other in points:
+        if other.id == self.id:
+          continue
+        other.distance = Tile.distance(self, other)
+        if len(neighbors) < 200 or other.distance < neighbors[0].distance:
+          neighbors.append(other)
+          neighbors = sorted(neighbors, key = lambda p: p.distance)
+          neighbors = neighbors[:200]
+          neighbors.reverse()
+      self._knn =  [n.id for n in neighbors]
+      return self._knn
     
   @property
   def pixel_map(self):
@@ -293,7 +309,6 @@ class CompareMethod(TimeStampable):
 
   lw = models.FloatField()
   nw = models.FloatField()
-  pw = models.FloatField()
 
 
   @classmethod
@@ -301,9 +316,8 @@ class CompareMethod(TimeStampable):
     gens = []
     while len(gens) < count:
       x, created = cls.objects.get_or_create(
-        lw = uniform(1, 100),
-        nw = uniform(1, 100),
-        pw = uniform(1, 100),
+        lw = normalvariate(20, 5),
+        nw = normalvariate(20, 5),
         )
       if created:
         gens.append(x)
@@ -311,13 +325,13 @@ class CompareMethod(TimeStampable):
 
   @property
   def weight(self):
-    return self.lw, self.nw, self.pw
+    return self.lw, self.nw
 
-  def generate_tests(self, other, count = 25, points = None):
+  def generate_tests(self, other, count = 20, points = None, next_group = None):
     if points == None:
       points = Tile.get_points()
     tests = []
-    while len(tests) < count:
+    for i in range(count):
       tile = Tile.objects.order_by('?')[:1].get()
       methods = [self, other]
       shuffle(methods)
@@ -325,7 +339,21 @@ class CompareMethod(TimeStampable):
       tile_a = tile.get_nn(points = points, weight = method_a.weight)
       tile_b = tile.get_nn(points = points, weight = method_b.weight)
 
+      if tile_a == tile_b:
+        x, created = CompareTest.objects.get_or_create(
+          winner = method_a,
+          sample_group = next_group,
+          target = tile,
+          tile_a = tile_a,
+          tile_b = tile_b,
+          method_a = method_a,
+          method_b = method_b,
+          )
+        print "Methods too similar.  Tiles matched"
+        continue
+
       x, created = CompareTest.objects.get_or_create(
+        sample_group = next_group,
         target = tile,
         tile_a = tile_a,
         tile_b = tile_b,
@@ -337,8 +365,29 @@ class CompareMethod(TimeStampable):
     return tests
 
   @classmethod
-  def evolve(cls):
-    pass
+  def evolve(cls, points = None):
+    sample_group = CompareTest.current_group()
+    if points == None:
+      points = Tile.get_points()
+    if cls.objects.count() < 15 and CompareTest.objects.filter(winner = None).count() == 0:
+      cls.generate(15 - cls.objects.count())
+      parents = cls.objects.all()
+      for hash_a, hash_b in combinations(parents, 2):
+        hash_a.generate_tests(hash_b, points = points, next_group = sample_group + 1)
+    elif not CompareTest.objects.filter(winner = None).count():
+      cursor = connection.cursor()
+      winners = []
+      for group in range(sample_group, 0, -1):
+        cursor.execute('SELECT DISTINCT sample_group, winner_id, count(winner_id) AS win_count FROM mosaic_comparetest WHERE sample_group=%s GROUP BY winner_id ORDER BY win_count DESC LIMIT 0,15', [sample_group, ])
+        winners += [winner[0] for winner in cursor.fetchall()]
+        if len(winners) > 15:
+          break
+      winners = winners[:15]
+      parents = list(CompareMethod.objects.filter(pk__in = winners))
+      parents += list(CompareMethod.generate(10))
+      for hash_a, hash_b in combinations(parents, 2):
+        hash_a.generate_tests(hash_b, points = points, next_group = sample_group + 1)
+
 
   @classmethod
   def breed(cls, method_a, method_b):
@@ -351,16 +400,12 @@ class CompareMethod(TimeStampable):
       weight_b = max(score_b/(score_a + score_b), 0.1)
 
       x = cls()
-      for val in ('lw', 'nw', 'pw'):
-        if uniform(0,1) < weight_a:
-          setattr(x, val, getattr(method_a, val))
-        else:
-          setattr(x, val, getattr(method_b, val))
+      for val in ('lw', 'nw'):
+        setattr(x, val, (getattr(method_a, val) + getattr(method_b, val))/2)
 
       x, created = cls.objects.get_or_create(
         lw = x.lw,
         nw = x.nw,
-        pw = x.pw,
         )
       if created:
         x.father = method_a
@@ -372,9 +417,12 @@ class CompareMethod(TimeStampable):
 
   @property
   def score(self):
-    pass
+    if not hashattr(self, '_score'):
+      self._score = CompareTest.objects.filter(winner = self).count()
+    return self._score
 
 class CompareTest(TimeStampable):
+  sample_group = models.IntegerField()
   target = models.ForeignKey(Tile)
   tile_a = models.ForeignKey(Tile, related_name = '+')
   tile_b = models.ForeignKey(Tile, related_name = '+')
@@ -382,3 +430,9 @@ class CompareTest(TimeStampable):
   winner = models.ForeignKey(CompareMethod, related_name = '+', null = True)
   method_a = models.ForeignKey(CompareMethod, related_name = '+')
   method_b = models.ForeignKey(CompareMethod, related_name = '+')
+
+  @classmethod
+  def current_group(cls):
+    if not cls.objects.count():
+      return 0
+    return cls.objects.latest('created_at').sample_group

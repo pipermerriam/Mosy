@@ -52,7 +52,7 @@ MEDIA_ROOT = '/Users/aaronmerriam/Sites/mosy.com/public/'
 # URL that handles the media served from MEDIA_ROOT. Make sure to use a
 # trailing slash.
 # Examples: "http://media.lawrence.com/media/", "http://example.com/media/"
-MEDIA_URL = '/media/'
+MEDIA_URL = '/'
 
 # Absolute path to the directory static files should be collected to.
 # Don't put anything in this directory yourself; store your static files
@@ -127,6 +127,8 @@ INSTALLED_APPS = (
     # Uncomment the next line to enable admin documentation:
     # 'django.contrib.admindocs',
 )
+
+DEBUG_TOOLBAR_CONFIG = {'INTERCEPT_REDIRECTS':  False}
 
 # A sample logging configuration. The only tangible logging
 # performed by this configuration is to send an email to

@@ -11,6 +11,7 @@ urlpatterns = patterns('',
     (r'^compare/$', 'mosy.mosaic.views.compare'),
     (r'^$', 'mosy.knn.views.index'),
     (r'^d/(?P<dp_id>[0-9]+)/$', 'mosy.knn.views.datapoint'),
+    (r'^t/(?P<tile_id>[0-9]+)/$', 'mosy.mosaic.views.tile'),
     (r'^(?P<lsh_id>[0-9]+)/$', 'mosy.knn.views.detail'),
 
     # Uncomment the admin/doc line below to enable admin documentation:
