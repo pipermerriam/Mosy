@@ -16,87 +16,42 @@ from mosy.mosaic.models import Tile
 RADIUS = 3.4
 TOLERANCE = 1.2
 
-class DataPoint(models.Model):
-  vector = PickledObjectField()
-  length = models.IntegerField()
+'''
 
-  @classmethod
-  def get_points(cls):
-    points = {}
-    for p in cls.objects.iterator():
-      points[p.id] = p
-    return points
+LSH requires a model with the following functions
 
-  @property
-  def neighbors(self):
-    if not hasattr(self, '_neighbors'):
-      pass
-    return self._neighbors
+Foo.distance(obj_1, obj_2)
+- Given two objects, returns a measurement of their similarity.
+  return value of zero means they are identical, and higher 
+  numbers mean less simlarity.
+@param obj_1
+@param obj_2
 
-  @property
-  def pixel_map(self):
-    if not hasattr(self, '_pixel_map'):
-      pixel_count = len(self.vector)/3
-      size = int(sqrt(pixel_count))
-      assert size**2*3 == len(self.vector)
-      pixel_map = []
-      for y in range(size):
-        pixels = []
-        for x in range(size):
-          index = (y*size+x)*3
-          r, g, b = self.vector[index:index+3]
-          pixel = '#%0.2X%0.2X%0.2X'%(int(r), int(g), int(b))
-          pixels.append(pixel)
-        pixel_map.append(pixels)
-      self._pixel_map = pixel_map
-    return self._pixel_map
+Foo.get_points()
+- Returns a dictionary of all points
 
-  def euclidean(self, other):
-    assert len(self.vector) == len(other.vector)
-    d = 0
-    for a, b in zip(self.vector, other.vector):
-      d += (a-b)**2
-    return sqrt(d)
+LSH requires the following properties
 
-  def pixel_distance(self, other):
-    assert len(self.vector) == len(other.vector)
-    d = 0.0
-    pixel_count = len(self.vector)/3
-    size = int(sqrt(pixel_count))
-    assert size**2*3 == len(self.vector)
-    for y in range(size):
-      for x in range(size):
-        index = (y*size+x)*3
-        r1, g1, b1 = self.vector[index:index+3]
-        r2, g2, b2 = other.vector[index:index+3]
-        d += (r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2
-    return sqrt(d)
+Foo().address
+- Returns an iterable of numeric values representing the objects
+  'location' in the point space.
 
-  def get_knn(self, points = None, debug = False):
-    if not points:
-      points = DataPoint.objects.all()
-    neighbors = []
-    for dp in points:
-      if dp.id == self.id:
-        continue
-      dp.distance = self.dist(dp)
-      if len(neighbors) < 200 or dp.distance < neighbors[0].distance:
-        neighbors.append(dp)
-        neighbors = sorted(neighbors, key = lambda p: p.distance)
-        neighbors = neighbors[:200]
-        neighbors.reverse()
-        if debug:
-          print "New Neighbor: %i - %f"%(dp.id, dp.distance)
-    nl = [n.id for n in neighbors]
-    n, created = Neighbors.objects.get_or_create(point = self)
-    if created:
-      n.neighbors = nl
-      n.save()
-    return neighbors
+Foo.RADIUS
+- Distance value for which two points should be considered 'close'
 
-class Neighbors(models.Model):
-  point = models.ForeignKey(DataPoint)
-  neighbors = PickledObjectField()
+Foo.TOLERANCE
+- Scalar for RADIUS value for when two points should be considered
+  'far apart'
+
+Foo.INITIAL_POPULATION
+- Initial population to generate before beginning selection.
+
+Foo.GENERATION_SIZE
+- Target size for each subsequent generation
+
+
+'''
+PointModel = Tile
 
 class LSH(models.Model):
   father = models.ForeignKey('self', related_name = 'father_of', null = True)
@@ -130,52 +85,43 @@ class LSH(models.Model):
 
   @classmethod
   def evolve(cls):
-    points = Tile.get_points()
     while True:
-      if cls.objects.count() < 1000:
-        if cls.objects.filter(collisions = None):
-          for x in cls.objects.filter(collisions = None):
-            x.test(points = points)
-        print "Generating Base Objects"
+      test_list = cls.objects.defer('father', 'mother').filter(untested = True)
+      if test_list.exists():
+        print "Testing untested hash functions"
+      elif cls.objects.count() < 1000:
+        print "Generating Initial Population"
         for i in range(1000-cls.objects.count()):
           x = cls()
-          x.test(points = points)
-      null_query = cls.objects.defer('father', 'mother').filter(collisions = None)
-      if null_query.exists():
-        assert len(null_query)
-        print "Testing New Children"
-        for lsh in null_query:
-          lsh.test(points = points)
-      print "Generating Parents for new Generations"
-      cls.spawn(points = points)
+          x.test()
+      else:
+        print "Breeding New Generation"
+        cls.spawn()
+      while test_list:
+        lsh = test_list.pop()
+        lsh.test()
 
   @classmethod
-  def spawn(cls, top = 60, other = 10, points = None):
-    if points == None:
-      points = Tile.get_points()
+  def spawn(cls, top = 60, other = 10):
     parents_query = cls.objects.raw('SELECT id, collisions, a, b, r, mean, std, p1, p2 FROM knn_lsh ORDER BY p1-p2 DESC LIMIT 0, %s', [top])
     parents = [lsh for lsh in parents_query]
     print "Grabbing random breeders"
     for i in range(other):
       new_breeder = cls()
-      new_breeder.test(points = points)
+      new_breeder.test()
       parents.append(new_breeder)
     assert len(parents) == top + other
     for hash_a, hash_b in combinations(parents, 2):
-      if hash_a.score > hash_b.score:
-        father = hash_a
-        mother = hash_b
-      else:
-        father = hash_b
-        mother = hash_a
-      child = cls.breed(father, mother)
-      print "Breeding Father(%i: %f) and Mother(%i: %f)"%(father.id, father.score, mother.id, mother.score)
+      print "Breeding (%i: %f) and (%i: %f)"%(hash_a.id, hash_a.score, hash_b.id, hash_b.score)
+      child = cls.breed(hash_a, hash_b)
     
 
   @classmethod
   def breed(cls, hash_a, hash_b):
     score_a = hash_a.score
     score_b = hash_b.score
+    if score_b > score_a:
+      return breed(hash_b, hash_a):
     weight_a = score_a/(score_a + score_b)
     weight_b = score_b/(score_a + score_b)
     
@@ -236,24 +182,22 @@ class LSH(models.Model):
     self.b = uniform(0, self.r)
     self.save()
 
-  def project(self, v):
+  def project(self, point):
+    vector = point.address
     if self.a == None or self.b == None or self.r == None:
       if not self.mother and not self.father:
-        self.generate()
-    dp = sum([x*y for x, y in zip(self.a, v)])
+        self.generate(dimension = len(vector))
+    dp = sum([x*y for x, y in zip(self.a, vector)])
     return floor((dp + self.b)/float(self.r))
 
-  def test(self, points = None, early_exit = False):
-    if points == None:
-      points = Tile.get_points()
-    plist = {}
-    for p in points:
-      plist[p.id] = p
+  def test(self, early_exit = True):
     start_time = time()
-    if early_exit:
+    if early_exit and LSH.objects.count() >= PointModel.INITIAL_POPULATION:
       cursor = connection.cursor()
       cursor.execute("SELECT p1-p2 AS `score` FROM `knn_lsh` ORDER BY p1-p2 DESC LIMIT 1000,1")
       target_score = float(cursor.fetchone()[0])
+    else:
+      early_exit = False
     sample_set = sample(range(1, 5001), 200)
     p1_overall = 0.0
     p2_overall = 0.0
@@ -261,26 +205,23 @@ class LSH(models.Model):
     collisions_overall = 0.0
 
     for n in range(len(sample_set)):
-      #test_point = DataPoint.objects.get(pk = sample_set.pop())
       test_point = plist[sample_set.pop()]
-      test_point.projection = self.project(test_point.rgb_list)
+      test_point.projection = self.project(test_point.address)
 
-      #close_points = Neighbors.objects.get(point = test_point).neighbors
-      close_points = test_point.get_knn(points = points)
+      close_points = test_point.knn
 
-      sample_points = range(1, 5001)
+      sample_points = PointModel.POINTS.keys()
       for point in close_points:
         sample_points.remove(point)
       sample_points.remove(test_point.id)
       sample_points = sample(sample_points, 200)
       sample_points += close_points
       sample_points = [plist[p] for p in sample_points]
-      #points = list(DataPoint.objects.filter(pk__in = points))
 
       assert len(sample_points) == 400
       for point in sample_points:
-        point.distance = Tile.distance(point)
-        point.projection = self.project(point.rgb_list)
+        point.distance = PointModel.distance(test_point, point)
+        point.projection = self.project(point.address)
 
       shuffle(sample_points)
 
@@ -292,9 +233,9 @@ class LSH(models.Model):
         point = sample_points[i]
         if test_point.projection == point.projection:
           collisions += 1
-          if point.distance <= RADIUS:
+          if point.distance <= PointModel.RADIUS:
             p1_count += 1
-          elif point.distance >= RADIUS*TOLERANCE:
+          elif point.distance >= PointModel.RADIUS*PointModel.TOLERANCE:
             p2_count += 1
           else:
             p3_count += 1

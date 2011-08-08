@@ -134,18 +134,41 @@ class StockImage(BaseImage):
         size = tile_size,
         )
 
+class classproperty(property):
+  def __get__(self, cls, owner):
+    return self.fget.__get__(None, owner)()
+
 class Tile(BaseImage):
   BASE_PATH = 'tile'
   CHUNK_SIZE = 10
   origin = models.ForeignKey(StockImage, related_name = '+')
   size = models.IntegerField()
 
+  @classproperty
   @classmethod
-  def get_points(cls):
-    points = cls.objects.all()
-    for p in points:
-      p.rgb_list, p.mono_list, p.str_list
-    return points
+  def RADIUS(cls):
+    if not hasattr(cls, '_RADIUS'):
+      cls._RADIUS = randint(1,100)
+    return cls._RADIUS
+
+  @classproperty
+  @classmethod
+  def TOLERANCE(cls):
+    if not hasattr(cls, '_TOLERANCE'):
+      cls._TOLERANCE = 8
+    return cls._TOLERANCE
+
+  @classproperty
+  @classmethod
+  def POINTS(cls):
+    if not hasattr(cls, '_POINTS'):
+      points = cls.objects.all()
+      temp = {}
+      for p in points:
+        p.mono_list, p.rgb_list, p.str_list
+        temp[p.id] = p
+      cls._POINTS = temp
+    return cls._POINTS
 
   @classmethod
   def distance(cls, tile_a, tile_b):
@@ -160,7 +183,7 @@ class Tile(BaseImage):
     d = 0.0
     for weight in weights:
       d += cls.compare(tile_a, tile_b, weight)
-    return d
+    return d/len(weights)
 
   @classmethod
   def compare(cls, tile_a, tile_b, weight = None, equal = False):
@@ -206,26 +229,36 @@ class Tile(BaseImage):
       mse = cls.mse(tile_a, tile_b)
     return sqrt(mse) / 255
 
-  def get_nn(self, points = None, weight = None, debug = False):
-    if not points:
-      points = Tile.get_points()
+  @property
+  def nn(self):
+    if not hasattr(self, '_nn'):
+      nn = None
+      for other in Tile.POINTS:
+        if other.id == self.id:
+          continue
+        other.distance = Tile.distance(self, other)
+        if nn == None or other.distance < nn.distance:
+          nn = other
+      self._nn = nn
+    return self._nn
+
+  def get_nn(self, weight = None, debug = False):
     nn = None
-    for other in points:
+    for other in Tile.POINTS:
       if other.id == self.id:
         continue
-      other.distance = Tile.distance(self, other)
+      other.distance = Tile.compare(self, other, weight)
       if not nn or other.distance < nn.distance:
         nn = other
         if debug:
           print "New Neighbor: %i - %f"%(other.id, other.distance)
     return nn
 
-  def get_knn(self, points = None):
+  @property
+  def knn(self):
     if not hasattr(self, '_knn'):
-      if not points:
-        points = Tile.get_points()
       neighbors = []
-      for other in points:
+      for other in Tile.POINTS:
         if other.id == self.id:
           continue
         other.distance = Tile.distance(self, other)
@@ -236,6 +269,19 @@ class Tile(BaseImage):
           neighbors.reverse()
       self._knn =  [n.id for n in neighbors]
       return self._knn
+
+  def get_knn(self, weight = None, points = None):
+    neighbors = []
+    for other in Tile.POINTS:
+      if other.id == self.id:
+        continue
+      other.distance = Tile.compare(self, other, weight)
+      if len(neighbors) < 200 or other.distance < neighbors[0].distance:
+        neighbors.append(other)
+        neighbors = sorted(neighbors, key = lambda p: p.distance)
+        neighbors = neighbors[:200]
+        neighbors.reverse()
+    return [n.id for n in neighbors]
     
   @property
   def pixel_map(self):
@@ -250,8 +296,8 @@ class Tile(BaseImage):
           r, g, b = self.rgb_list[index:index+3]
           pixel = '#%0.2X%0.2X%0.2X'%(int(r), int(g), int(b))
           pixels.append(pixel)
-        pixel_map.append(pixels)
-      self._pixel_map = pixel_map
+        pixel_map.append(tuple(pixels))
+      self._pixel_map = tuple(pixel_map)
     return self._pixel_map
     
 
@@ -278,6 +324,10 @@ class Tile(BaseImage):
       self._rgb_list = tuple(self._rgb_list)
     assert len(self._rgb_list) == (self.size/self.CHUNK_SIZE)**2*3
     return self._rgb_list
+
+  @property
+  def address(self):
+    return self.rgb_list
 
   @property
   def mono_list(self):
@@ -327,17 +377,15 @@ class CompareMethod(TimeStampable):
   def weight(self):
     return self.lw, self.nw
 
-  def generate_tests(self, other, count = 20, points = None, next_group = None):
-    if points == None:
-      points = Tile.get_points()
+  def generate_tests(self, other, count = 20, next_group = None):
     tests = []
     for i in range(count):
       tile = Tile.objects.order_by('?')[:1].get()
       methods = [self, other]
       shuffle(methods)
       method_a, method_b = methods
-      tile_a = tile.get_nn(points = points, weight = method_a.weight)
-      tile_b = tile.get_nn(points = points, weight = method_b.weight)
+      tile_a = tile.get_nn(weight = method_a.weight)
+      tile_b = tile.get_nn(weight = method_b.weight)
 
       if tile_a == tile_b:
         x, created = CompareTest.objects.get_or_create(
@@ -365,15 +413,13 @@ class CompareMethod(TimeStampable):
     return tests
 
   @classmethod
-  def evolve(cls, points = None):
+  def evolve(cls):
     sample_group = CompareTest.current_group()
-    if points == None:
-      points = Tile.get_points()
     if cls.objects.count() < 15 and CompareTest.objects.filter(winner = None).count() == 0:
       cls.generate(15 - cls.objects.count())
       parents = cls.objects.all()
       for hash_a, hash_b in combinations(parents, 2):
-        hash_a.generate_tests(hash_b, points = points, next_group = sample_group + 1)
+        hash_a.generate_tests(hash_b, next_group = sample_group + 1)
     elif not CompareTest.objects.filter(winner = None).count():
       cursor = connection.cursor()
       winners = []
@@ -386,7 +432,7 @@ class CompareMethod(TimeStampable):
       parents = list(CompareMethod.objects.filter(pk__in = winners))
       parents += list(CompareMethod.generate(10))
       for hash_a, hash_b in combinations(parents, 2):
-        hash_a.generate_tests(hash_b, points = points, next_group = sample_group + 1)
+        hash_a.generate_tests(hash_b, next_group = sample_group + 1)
 
 
   @classmethod
