@@ -195,7 +195,7 @@ class LSH(models.Model):
       target_score = float(cursor.fetchone()[0])
     else:
       early_exit = False
-    sample_set = sample(range(1, 5001), 200)
+    sample_set = sample(PointModel.POINTS.keys(), 200)
     p1_overall = 0.0
     p2_overall = 0.0
     p3_overall = 0.0
