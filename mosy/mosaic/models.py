@@ -300,7 +300,7 @@ class Tile(BaseImage):
           neighbors = neighbors[:200]
           neighbors.reverse()
       self._knn =  [n.id for n in neighbors]
-      return self._knn
+    return self._knn
 
   def get_knn(self, weight = None, points = None):
     neighbors = []
