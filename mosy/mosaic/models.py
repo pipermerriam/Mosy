@@ -4,6 +4,7 @@ import re
 import hashlib
 import Levenshtein
 import mimetypes
+import shelve
 
 from itertools import combinations
 from math import sqrt, log
@@ -141,21 +142,49 @@ class classproperty(property):
 class Tile(BaseImage):
   BASE_PATH = 'tile'
   CHUNK_SIZE = 10
+  INITIAL_POPULATION = 2000
   origin = models.ForeignKey(StockImage, related_name = '+')
   size = models.IntegerField()
+
+  @classmethod
+  def load_data(cls, key):
+    ds = shelve.open('tile_data')
+    if ds.has_key(key):
+      setattr(cls, '_' + key, ds[key])
+    ds.close()
+
+  @classmethod
+  def init(cls):
+    ds = shelve.open('tile_data')
+    for key in ('RADIUS', 'TOLERANCE', 'POINTS'):
+      if ds.has_key(key):
+        setattr(cls, '_' + key, ds[key])
+    ds.close()
 
   @classproperty
   @classmethod
   def RADIUS(cls):
     if not hasattr(cls, '_RADIUS'):
-      cls._RADIUS = randint(1,100)
+      r = 0.0
+      c = 0
+      for p in cls.POINTS:
+        point = cls.POINTS[p]
+        r = (r*c + cls.distance(point, point.nn))/(c+1)
+      t = 0.0
+      for p in cls.POINTS:
+        point = cls.POINTS[p]
+        t += (cls.distance(point, point.nn) - r)**2
+        t /= len(cls.POINTS)
+        t = sqrt(t)
+      cls._RADIUS = r + 3*t
+      cls._TOLERANCE = cls._RADIUS / r
     return cls._RADIUS
 
   @classproperty
   @classmethod
   def TOLERANCE(cls):
     if not hasattr(cls, '_TOLERANCE'):
-      cls._TOLERANCE = 8
+      temp = cls.RADIUS
     return cls._TOLERANCE
 
   @classproperty
@@ -233,7 +262,8 @@ class Tile(BaseImage):
   def nn(self):
     if not hasattr(self, '_nn'):
       nn = None
-      for other in Tile.POINTS:
+      for p in Tile.POINTS:
+        other = Tile.POINTS[p]
         if other.id == self.id:
           continue
         other.distance = Tile.distance(self, other)
@@ -244,7 +274,8 @@ class Tile(BaseImage):
 
   def get_nn(self, weight = None, debug = False):
     nn = None
-    for other in Tile.POINTS:
+    for p in Tile.POINTS:
+      other = Tile.POINTS[p]
       if other.id == self.id:
         continue
       other.distance = Tile.compare(self, other, weight)
@@ -258,7 +289,8 @@ class Tile(BaseImage):
   def knn(self):
     if not hasattr(self, '_knn'):
       neighbors = []
-      for other in Tile.POINTS:
+      for p in Tile.POINTS:
+        other = Tile.POINTS[p]
         if other.id == self.id:
           continue
         other.distance = Tile.distance(self, other)
@@ -272,7 +304,8 @@ class Tile(BaseImage):
 
   def get_knn(self, weight = None, points = None):
     neighbors = []
-    for other in Tile.POINTS:
+    for p in Tile.POINTS:
+      other = Tile.POINTS[p]
       if other.id == self.id:
         continue
       other.distance = Tile.compare(self, other, weight)

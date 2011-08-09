@@ -43,13 +43,6 @@ Foo.TOLERANCE
 - Scalar for RADIUS value for when two points should be considered
   'far apart'
 
-Foo.INITIAL_POPULATION
-- Initial population to generate before beginning selection.
-
-Foo.GENERATION_SIZE
-- Target size for each subsequent generation
-
-
 '''
 PointModel = Tile
 
@@ -59,6 +52,8 @@ class LSH(models.Model):
   p1 = models.FloatField(null = True)
   p2 = models.FloatField(null = True)
   collisions = models.FloatField(null = True)
+
+  tested = models.BooleanField(default = False)
 
   a = PickledObjectField(null = True)
   r = models.IntegerField(null = True)
@@ -85,21 +80,23 @@ class LSH(models.Model):
 
   @classmethod
   def evolve(cls):
+    PointModel.init()
     while True:
-      test_list = cls.objects.defer('father', 'mother').filter(untested = True)
+      test_list = cls.objects.defer('father', 'mother').filter(tested = False)
       if test_list.exists():
+        test_list = list(test_list)
+        while test_list:
+          lsh = test_list.pop()
+          lsh.test()
         print "Testing untested hash functions"
-      elif cls.objects.count() < 1000:
+      elif cls.objects.count() < PointModel.INITIAL_POPULATION:
         print "Generating Initial Population"
-        for i in range(1000-cls.objects.count()):
+        for i in range(PointModel.INITIAL_POPULATION-cls.objects.count()):
           x = cls()
           x.test()
       else:
         print "Breeding New Generation"
         cls.spawn()
-      while test_list:
-        lsh = test_list.pop()
-        lsh.test()
 
   @classmethod
   def spawn(cls, top = 60, other = 10):
@@ -121,7 +118,7 @@ class LSH(models.Model):
     score_a = hash_a.score
     score_b = hash_b.score
     if score_b > score_a:
-      return breed(hash_b, hash_a):
+      return breed(hash_b, hash_a)
     weight_a = score_a/(score_a + score_b)
     weight_b = score_b/(score_a + score_b)
     
@@ -205,8 +202,8 @@ class LSH(models.Model):
     collisions_overall = 0.0
 
     for n in range(len(sample_set)):
-      test_point = plist[sample_set.pop()]
-      test_point.projection = self.project(test_point.address)
+      test_point = PointModel.POINTS[sample_set.pop()]
+      test_point.projection = self.project(test_point)
 
       close_points = test_point.knn
 
@@ -216,12 +213,12 @@ class LSH(models.Model):
       sample_points.remove(test_point.id)
       sample_points = sample(sample_points, 200)
       sample_points += close_points
-      sample_points = [plist[p] for p in sample_points]
+      sample_points = [PointModel.POINTS[p] for p in sample_points]
 
       assert len(sample_points) == 400
       for point in sample_points:
         point.distance = PointModel.distance(test_point, point)
-        point.projection = self.project(point.address)
+        point.projection = self.project(point)
 
       shuffle(sample_points)
 
@@ -249,6 +246,7 @@ class LSH(models.Model):
           break
 
     self.collisions = collisions_overall
+    self.tested = True
     if collisions_overall > 0:
       self.p1 = p1_overall
       self.p2 = p2_overall
