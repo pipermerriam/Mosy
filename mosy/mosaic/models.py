@@ -157,7 +157,7 @@ class Tile(BaseImage):
   def init(cls):
     ds = shelve.open('tile_data')
     for key in ('RADIUS', 'TOLERANCE', 'POINTS'):
-      if ds.has_key(key):
+      if ds.has_key(key) and not hasattr(cls, '_' + key):
         setattr(cls, '_' + key, ds[key])
     ds.close()
 
