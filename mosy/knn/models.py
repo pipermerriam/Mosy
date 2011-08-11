@@ -118,7 +118,7 @@ class LSH(models.Model):
     score_a = hash_a.score
     score_b = hash_b.score
     if score_b > score_a:
-      return breed(hash_b, hash_a)
+      return cls.breed(hash_b, hash_a)
     weight_a = score_a/(score_a + score_b)
     weight_b = score_b/(score_a + score_b)
     
