@@ -220,15 +220,16 @@ class Tile(BaseImage):
     if weight == None:
       if equal:
         weight = (100.0, 100.0)
-      weight = tuple([normalvariate(20, 5) for i in range(2)])
-    mse = cls.mse(tile_a, tile_b)
+      weight = tuple([normalvariate(20, 5) for i in range(5)])
+    lw, nw, rw, gw, bw = weight
+    mse = cls.mse(tile_a, tile_b, weight = (rw, gw, bw))
 
-    levenshtein = cls.levenshtein(tile_a, tile_b) * weight[0] / sum(weight)
+    levenshtein = cls.levenshtein(tile_a, tile_b) * lw / (lw+nw)
     #psnr = cls.psnr(tile_a, tile_b, mse = mse) * weight[1] / sum(weight)
-    nrmsd = cls.nrmsd(tile_a, tile_b, mse = mse) * weight[1] / sum(weight)
+    nrmsd = cls.nrmsd(tile_a, tile_b, mse = mse) * nw / (lw+nw)
     
     return levenshtein + nrmsd
-  
+
   #Calculate the levenshtein distance between the two images
   @classmethod
   def levenshtein(cls, tile_a, tile_b):
@@ -238,9 +239,11 @@ class Tile(BaseImage):
 
   #Calculate the mean square error between images
   @classmethod
-  def mse(cls, tile_a, tile_b):
+  def mse(cls, tile_a, tile_b, weight = (1.0, 1.0, 1.0)):
     assert tile_a.size == tile_b.size
-    tmp = sum((a-b)**2 for a, b in zip(tile_a.rgb_list, tile_b.rgb_list))
+    s = sum(weight)
+    wlist = [weight[i%3]/s for i in range(len(tile_a.rgb_list))]
+    tmp = sum((w*(a-b))**2 for a, b, w in zip(tile_a.rgb_list, tile_b.rgb_list, wlist))
     return float(tmp)/len(tile_a.rgb_list)
 
   #Calculate the peak signal-to-noise ratio
@@ -393,6 +396,9 @@ class CompareMethod(TimeStampable):
   lw = models.FloatField()
   nw = models.FloatField()
 
+  rw = models.FloatField()
+  gw = models.FloatField()
+  bw = models.FloatField()
 
   @classmethod
   def generate(cls, count = 1):
@@ -401,6 +407,9 @@ class CompareMethod(TimeStampable):
       x, created = cls.objects.get_or_create(
         lw = normalvariate(20, 5),
         nw = normalvariate(20, 5),
+        rw = normalvariate(20, 5),
+        gw = normalvariate(20, 5),
+        bw = normalvariate(20, 5),
         )
       if created:
         gens.append(x)
@@ -408,7 +417,7 @@ class CompareMethod(TimeStampable):
 
   @property
   def weight(self):
-    return self.lw, self.nw
+    return self.lw, self.nw, self.rw, self.gw, self.bw
 
   def generate_tests(self, other, count = 20, next_group = None):
     tests = []
@@ -479,12 +488,15 @@ class CompareMethod(TimeStampable):
       weight_b = max(score_b/(score_a + score_b), 0.1)
 
       x = cls()
-      for val in ('lw', 'nw'):
+      for val in ('lw', 'nw', 'rw', 'gw', 'bw'):
         setattr(x, val, (getattr(method_a, val) + getattr(method_b, val))/2)
 
       x, created = cls.objects.get_or_create(
         lw = x.lw,
         nw = x.nw,
+        rw = x.rw,
+        gw = x.gw,
+        bw = x.bw,
         )
       if created:
         x.father = method_a
